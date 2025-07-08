@@ -11,6 +11,7 @@ This repository contains a simple Streamlit application for analyzing NPS survey
 - Pivot tables with percentages and bar charts for structured questions.
 - Downloadable results and pivot tables.
 - Generate a narrative report and download it as a DOCX or PDF file.
+- When multiple segments are selected, generate a report for each and download all DOCX/PDF files in a ZIP.
 - Progress bars for long-running translation and categorization tasks.
 - Expandable comments for spot-checking AI results.
 - Language detection stored alongside translations.
