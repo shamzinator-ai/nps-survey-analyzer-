@@ -33,6 +33,50 @@ CATEGORIES = [
     "Negative Words", "Positive Words"
 ]
 
+# Map each category to a short description shown in the sidebar
+CATEGORY_DESCRIPTIONS = {
+    "Search/Navigation": "Finding resources or moving around the site",
+    "Resource Mention": "References to specific products or resources",
+    "User Question": "Questions users ask about the service",
+    "Translation Mention": "Comments about translation quality or requests",
+    "User Suggestion": "Ideas or feature requests from users",
+    "Pain Point": "Descriptions of frustrations or obstacles",
+    "AI": "Mentions of AI or automated features",
+    "Competitor": "Comparisons to or mentions of competitors",
+    "Site Error": "Reports of errors or broken pages",
+    "Social Media": "Links or references to social media platforms",
+    "Phonics": "Feedback specifically about phonics content",
+    "Price Mention": "Concerns related to pricing or cost",
+    "Accidental Purchase": "Unintended purchases or charges",
+    "Resource Preview": "Ability to preview resources before buying",
+    "Resource Request": "Requests for new resources",
+    "Editing/Adapting Resource": "Need to edit or customise resources",
+    "Resource Quality": "Opinions about quality of resources",
+    "EDI": "Equity, diversity and inclusion topics",
+    "SEND": "Special educational needs and disabilities",
+    "Partnership": "Potential or ongoing partnerships",
+    "Parental Leave": "Questions about parental leave policies",
+    "Email": "General email communication issues",
+    "Email Verification": "Problems verifying email accounts",
+    "Not Used Enough": "Users saying they don't use the service often",
+    "Legal": "Legal references or compliance concerns",
+    "Glassdoor": "Mentions of Glassdoor reviews or reputation",
+    "GDPR": "Data protection and GDPR related comments",
+    "Free Resources": "Discussion of free offerings",
+    "Download Issues": "Trouble downloading files or resources",
+    "Content Errors": "Mistakes found in content or resources",
+    "Account Access": "Login or account access problems",
+    "Already Cancelled": "Users claiming they already cancelled",
+    "Auto-renewal": "Concerns about auto-renewing subscriptions",
+    "Book Club": "References to book club features",
+    "Cancellation Difficulty": "Difficulty cancelling subscriptions",
+    "CS General": "General customer service feedback",
+    "CS Negative": "Negative comments about support",
+    "CS Positive": "Positive comments about support",
+    "Negative Words": "Use of negative language or sentiment",
+    "Positive Words": "Use of positive language or sentiment",
+}
+
 # ----------------------------- Utility Functions -----------------------------
 
 @st.cache_data(show_spinner=False)
@@ -377,8 +421,9 @@ if file and validate_file(file):
     if selected_segments:
         df = df[df[location_col].isin(selected_segments)]
 
-    st.markdown("### Available Categories")
-    st.write(", ".join(CATEGORIES))
+    with st.sidebar.expander("Category descriptions"):
+        for cat, desc in CATEGORY_DESCRIPTIONS.items():
+            st.write(f"**{cat}** - {desc}")
 
     if st.button(
         "Process Data",
