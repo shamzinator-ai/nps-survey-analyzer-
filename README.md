@@ -11,6 +11,7 @@ This repository contains a simple Streamlit application for analyzing NPS survey
 - Pivot tables with percentages and bar charts for structured questions.
 - Downloadable results and pivot tables.
 - Generate a narrative report and download it as a DOCX or PDF file.
+- Exported reports include the pivot tables and charts shown in Streamlit.
 - Progress bars for long-running translation and categorization tasks.
 - Expandable comments for spot-checking AI results.
 - Language detection stored alongside translations.
@@ -19,6 +20,7 @@ This repository contains a simple Streamlit application for analyzing NPS survey
 
 - Python 3.12
 - An OpenAI API key set as the environment variable `OPENAI_API_KEY`.
+- Matplotlib for saving charts as images.
 
 Install dependencies with:
 

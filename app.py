@@ -9,7 +9,10 @@ import openai
 import pandas as pd
 import streamlit as st
 from docx import Document
+from docx.shared import Inches
 from fpdf import FPDF
+import matplotlib.pyplot as plt
+import tempfile
 
 # Set your OpenAI API key via environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY", "")
@@ -100,6 +103,23 @@ def bar_chart(pivot: pd.DataFrame, title: str):
     st.altair_chart(chart, use_container_width=True)
 
 
+def chart_to_png(pivot: pd.DataFrame, title: str) -> BytesIO:
+    """Create a bar chart as a PNG image and return the bytes."""
+    plot_df = pivot[pivot["Response"] != "Total"].copy()
+    fig, ax = plt.subplots()
+    ax.bar(plot_df["Response"].astype(str), plot_df["Count"])
+    ax.set_title(title)
+    ax.set_xlabel("Response")
+    ax.set_ylabel("Count")
+    plt.xticks(rotation=45, ha="right")
+    fig.tight_layout()
+    buf = BytesIO()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
 def download_link(df: pd.DataFrame, filename: str, label: str):
     csv = df.to_csv(index=False).encode('utf-8')
     st.download_button(label, csv, file_name=filename, mime='text/csv')
@@ -166,23 +186,53 @@ def generate_report(df: pd.DataFrame) -> str:
         return ""
 
 
-def save_docx(text: str) -> BytesIO:
+def save_docx(text: str, pivots: List[Tuple[str, pd.DataFrame]], charts: List[Tuple[str, BytesIO]]) -> BytesIO:
+    """Save the narrative report with tables and charts to DOCX."""
     document = Document()
     document.add_paragraph(text)
+    for (name, pivot), (_, chart) in zip(pivots, charts):
+        document.add_heading(name, level=2)
+        table = document.add_table(rows=pivot.shape[0] + 1, cols=pivot.shape[1])
+        for j, col in enumerate(pivot.columns):
+            table.cell(0, j).text = str(col)
+        for i, row in pivot.iterrows():
+            for j, col in enumerate(pivot.columns):
+                table.cell(i + 1, j).text = str(row[col])
+        chart.seek(0)
+        document.add_picture(chart, width=Inches(5))
     bio = BytesIO()
     document.save(bio)
     bio.seek(0)
     return bio
 
 
-def save_pdf(text: str) -> BytesIO:
-    """Save text as a simple PDF."""
+def save_pdf(text: str, pivots: List[Tuple[str, pd.DataFrame]], charts: List[Tuple[str, BytesIO]]) -> BytesIO:
+    """Save the narrative report with tables and charts to PDF."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(True, margin=15)
     pdf.set_font("Arial", size=12)
     for line in text.split("\n"):
         pdf.multi_cell(0, 10, line)
+    for (name, pivot), (_, chart) in zip(pivots, charts):
+        pdf.ln(5)
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 10, name, ln=True)
+        pdf.set_font("Arial", size=10)
+        col_width = (pdf.w - 20) / len(pivot.columns)
+        for col in pivot.columns:
+            pdf.cell(col_width, 10, str(col), border=1)
+        pdf.ln()
+        for _, row in pivot.iterrows():
+            for col in pivot.columns:
+                pdf.cell(col_width, 10, str(row[col]), border=1)
+            pdf.ln()
+        chart.seek(0)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+        tmp.write(chart.getbuffer())
+        tmp.close()
+        pdf.image(tmp.name, w=pdf.w - 20)
+        os.unlink(tmp.name)
     bio = BytesIO()
     pdf.output(bio)
     bio.seek(0)
@@ -216,6 +266,13 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFra
 
 st.set_page_config(page_title="NPS Survey Analyzer", layout="wide")
 st.title("NPS Survey Analyzer")
+
+if "processed_df" not in st.session_state:
+    st.session_state.processed_df = None
+if "pivots" not in st.session_state:
+    st.session_state.pivots = {}
+if "charts" not in st.session_state:
+    st.session_state.charts = {}
 
 st.sidebar.header("1. Upload Survey Data")
 file = st.sidebar.file_uploader(
@@ -267,13 +324,27 @@ if file and validate_file(file):
         with st.spinner("Processing free-text responses..."):
             df = process_free_text(df, free_text_cols)
 
-        st.success("Processing complete")
-
         df = review_translations(df, user_id_col)
-
-        st.subheader("Structured Data Analysis")
+        st.session_state.processed_df = df
+        st.session_state.pivots = {}
+        st.session_state.charts = {}
         for col in structured_cols:
             pivot = generate_pivot(df, col)
+            st.session_state.pivots[col] = pivot
+            img = chart_to_png(pivot, f"{col} Responses")
+            st.session_state.charts[col] = img.getvalue()
+        st.success("Processing complete")
+
+    if st.session_state.processed_df is not None:
+        df = st.session_state.processed_df
+        st.subheader("Structured Data Analysis")
+        for col in structured_cols:
+            pivot = st.session_state.pivots.get(col)
+            if pivot is None:
+                pivot = generate_pivot(df, col)
+                st.session_state.pivots[col] = pivot
+                img = chart_to_png(pivot, f"{col} Responses")
+                st.session_state.charts[col] = img.getvalue()
             st.write(f"### {col}")
             st.dataframe(pivot)
             bar_chart(pivot, f"{col} Responses")
@@ -292,9 +363,11 @@ if file and validate_file(file):
         if st.button("Generate Report"):
             report_text = generate_report(df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
             if report_text:
+                pivots = [(col, st.session_state.pivots[col]) for col in structured_cols]
+                charts = [(col, BytesIO(st.session_state.charts[col])) for col in structured_cols]
                 st.markdown(report_text)
-                docx_file = save_docx(report_text)
-                pdf_file = save_pdf(report_text)
+                docx_file = save_docx(report_text, pivots, charts)
+                pdf_file = save_pdf(report_text, pivots, charts)
                 st.download_button("Download DOCX", docx_file, "report.docx")
                 st.download_button("Download PDF", pdf_file, "report.pdf")
 else:
