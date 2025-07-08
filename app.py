@@ -3,6 +3,7 @@ import json
 from io import BytesIO
 from typing import List, Tuple
 import time
+import asyncio
 
 import altair as alt
 import openai
@@ -13,6 +14,7 @@ from fpdf import FPDF
 
 # Set your OpenAI API key via environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY", "")
+async_client = openai.AsyncOpenAI(api_key=openai.api_key)
 MODEL = "gpt-4o-mini"
 
 CATEGORIES = [
@@ -78,6 +80,65 @@ def categorize_text(text: str) -> List[str]:
     except Exception as e:
         st.error(f"Categorization failed: {e}")
         return []
+
+
+async def async_translate_batch(texts: List[str]) -> List[Tuple[str, str]]:
+    """Asynchronously translate a batch of texts."""
+    async def _translate(text: str) -> Tuple[str, str]:
+        if not text or not text.strip():
+            return "", ""
+        prompt = (
+            "Detect the language of the following text and translate it to English."
+            "Respond in JSON with keys 'language' and 'translation'.\nText: " + text
+        )
+        try:
+            response = await async_client.chat.completions.create(
+                model=MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+            )
+            content = response.choices[0].message.content
+            data = json.loads(content)
+            return data.get("translation", "").strip(), data.get("language", "")
+        except Exception as e:
+            st.error(f"Translation failed: {e}")
+            return text, ""
+
+    tasks = [_translate(t) for t in texts]
+    return await asyncio.gather(*tasks)
+
+
+async def async_categorize_batch(texts: List[str]) -> List[List[str]]:
+    """Asynchronously categorize a batch of texts."""
+    async def _categorize(text: str) -> List[str]:
+        if not text:
+            return []
+        categories_str = ", ".join(CATEGORIES)
+        system_prompt = (
+            "You are a helpful assistant that tags survey comments with all relevant "
+            "categories from the provided list. Return a comma-separated list of "
+            "matching categories. If none apply, return 'None'."
+        )
+        user_prompt = f"Categories: {categories_str}\nComment: {text}"
+        try:
+            response = await async_client.chat.completions.create(
+                model=MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0,
+            )
+            result = response.choices[0].message.content.strip()
+            if result.lower() == "none":
+                return []
+            return [c.strip() for c in result.split(',')]
+        except Exception as e:
+            st.error(f"Categorization failed: {e}")
+            return []
+
+    tasks = [_categorize(t) for t in texts]
+    return await asyncio.gather(*tasks)
 
 
 def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
@@ -191,20 +252,30 @@ def save_pdf(text: str) -> BytesIO:
 
 def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFrame:
     """Concatenate, translate and categorize free-text columns with progress."""
-    concat, translated, categories, languages = [], [], [], []
+    concat = [
+        " ".join(str(row[c]) if pd.notnull(row[c]) else "" for c in free_text_cols)
+        for _, row in df.iterrows()
+    ]
+    translated, languages, categories = [], [], []
     progress = st.progress(0.0, text="Starting...")
-    start = time.time()
-    for i, (_, row) in enumerate(df.iterrows(), start=1):
-        combined = " ".join(str(row[c]) if pd.notnull(row[c]) else "" for c in free_text_cols)
-        trans, lang = translate_text(combined)
-        cats = categorize_text(trans)
-        concat.append(combined)
-        translated.append(trans)
-        languages.append(lang)
-        categories.append(", ".join(cats))
-        rate = (time.time() - start) / i
-        remaining = rate * (len(df) - i)
-        progress.progress(i / len(df), text=f"Processing... ETA {int(remaining)}s")
+    start_time = time.time()
+
+    async def _run_batches():
+        batch_size = 5
+        for i in range(0, len(concat), batch_size):
+            batch = concat[i:i + batch_size]
+            trans_lang = await async_translate_batch(batch)
+            cat_batch = await async_categorize_batch([t for t, _ in trans_lang])
+            for (trans, lang), cats in zip(trans_lang, cat_batch):
+                translated.append(trans)
+                languages.append(lang)
+                categories.append(", ".join(cats))
+                done = len(translated)
+                rate = (time.time() - start_time) / max(done, 1)
+                remaining = rate * (len(concat) - done)
+                progress.progress(done / len(concat), text=f"Processing... ETA {int(remaining)}s")
+
+    asyncio.run(_run_batches())
     progress.empty()
     df["Concatenated"] = concat
     df["Translated"] = translated
