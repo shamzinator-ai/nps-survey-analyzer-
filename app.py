@@ -92,12 +92,44 @@ def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
 
 
 def bar_chart(pivot: pd.DataFrame, title: str):
-    chart = alt.Chart(pivot).mark_bar().encode(
-        x=alt.X('Response:N', sort='-y'),
-        y='Count:Q',
-        tooltip=['Response', 'Count']
-    ).properties(title=title, height=300)
+    """Display bar chart with white background and gradient colors.
+
+    Returns PNG and SVG bytes for download.
+    """
+    chart = (
+        alt.Chart(pivot, background="white")
+        .mark_bar()
+        .encode(
+            x=alt.X("Response:N", sort="-y"),
+            y="Count:Q",
+            color=alt.Color(
+                "Count:Q",
+                scale=alt.Scale(scheme="blues"),
+                legend=None,
+            ),
+            tooltip=["Response", "Count"],
+        )
+        .properties(title=title, height=300)
+    )
+
     st.altair_chart(chart, use_container_width=True)
+
+    png_data, svg_data = BytesIO(), BytesIO()
+    try:
+        chart.save(png_data, format="png")
+        png_data.seek(0)
+    except Exception as e:  # pragma: no cover - optional dependency
+        st.error(f"PNG save failed: {e}")
+        png_data = None
+
+    try:
+        chart.save(svg_data, format="svg")
+        svg_data.seek(0)
+    except Exception as e:  # pragma: no cover - optional dependency
+        st.error(f"SVG save failed: {e}")
+        svg_data = None
+
+    return png_data, svg_data
 
 
 def download_link(df: pd.DataFrame, filename: str, label: str):
@@ -276,7 +308,15 @@ if file and validate_file(file):
             pivot = generate_pivot(df, col)
             st.write(f"### {col}")
             st.dataframe(pivot)
-            bar_chart(pivot, f"{col} Responses")
+            png, svg = bar_chart(pivot, f"{col} Responses")
+            if png:
+                st.download_button(
+                    "Download PNG", png, file_name=f"{col}.png", mime="image/png"
+                )
+            if svg:
+                st.download_button(
+                    "Download SVG", svg, file_name=f"{col}.svg", mime="image/svg+xml"
+                )
             download_link(pivot, f"pivot_{col}.csv", f"Download {col} Pivot")
 
         st.subheader("Categorized Comments")
