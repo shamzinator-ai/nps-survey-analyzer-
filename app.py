@@ -2,6 +2,7 @@ import os
 import json
 from io import BytesIO
 from typing import List, Tuple
+import time
 
 import altair as alt
 import openai
@@ -104,6 +105,36 @@ def download_link(df: pd.DataFrame, filename: str, label: str):
     st.download_button(label, csv, file_name=filename, mime='text/csv')
 
 
+def validate_file(uploaded_file) -> bool:
+    """Basic checks for uploaded file size and type."""
+    max_size = 10 * 1024 * 1024  # 10MB
+    if uploaded_file.size > max_size:
+        st.error("File too large. Maximum size is 10MB.")
+        return False
+    return True
+
+
+def review_translations(df: pd.DataFrame, id_col: str) -> pd.DataFrame:
+    """Allow user to edit translations and categories."""
+    st.subheader("Review Translations and Categories")
+    flags = []
+    for idx, row in df.iterrows():
+        with st.expander(f"User {row[id_col]}"):
+            st.write("**Original:**", row["Concatenated"])
+            new_trans = st.text_area(
+                "Translated", value=row["Translated"], key=f"trans_{idx}")
+            new_cats = st.multiselect(
+                "Categories", options=CATEGORIES,
+                default=[c.strip() for c in row["Categories"].split(',') if c],
+                key=f"cat_{idx}")
+            flag = st.checkbox("Flag for review", key=f"flag_{idx}")
+            df.at[idx, "Translated"] = new_trans
+            df.at[idx, "Categories"] = ", ".join(new_cats)
+            flags.append(flag)
+    df["Flagged"] = flags
+    return df
+
+
 def generate_report(df: pd.DataFrame) -> str:
     """Generate a detailed report covering all requested sections."""
     prompt = (
@@ -161,7 +192,8 @@ def save_pdf(text: str) -> BytesIO:
 def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFrame:
     """Concatenate, translate and categorize free-text columns with progress."""
     concat, translated, categories, languages = [], [], [], []
-    progress = st.progress(0.0)
+    progress = st.progress(0.0, text="Starting...")
+    start = time.time()
     for i, (_, row) in enumerate(df.iterrows(), start=1):
         combined = " ".join(str(row[c]) if pd.notnull(row[c]) else "" for c in free_text_cols)
         trans, lang = translate_text(combined)
@@ -170,7 +202,9 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFra
         translated.append(trans)
         languages.append(lang)
         categories.append(", ".join(cats))
-        progress.progress(i / len(df))
+        rate = (time.time() - start) / i
+        remaining = rate * (len(df) - i)
+        progress.progress(i / len(df), text=f"Processing... ETA {int(remaining)}s")
     progress.empty()
     df["Concatenated"] = concat
     df["Translated"] = translated
@@ -189,12 +223,17 @@ file = st.sidebar.file_uploader(
     help="File must include a unique ID, location, at least one structured and one free-text column."
 )
 
-if file:
+if file and validate_file(file):
     try:
         if file.name.endswith(("xls", "xlsx")):
             df = pd.read_excel(file)
         else:
             df = pd.read_csv(file)
+        if df.empty:
+            st.error("Uploaded file contains no data")
+            st.stop()
+        if df.isnull().all(axis=0).any():
+            st.warning("Some columns contain only missing values")
     except Exception as e:
         st.error(f"Failed to read file: {e}")
         st.stop()
@@ -230,6 +269,8 @@ if file:
 
         st.success("Processing complete")
 
+        df = review_translations(df, user_id_col)
+
         st.subheader("Structured Data Analysis")
         for col in structured_cols:
             pivot = generate_pivot(df, col)
@@ -239,16 +280,17 @@ if file:
             download_link(pivot, f"pivot_{col}.csv", f"Download {col} Pivot")
 
         st.subheader("Categorized Comments")
-        display_cols = [user_id_col, location_col, 'Concatenated', 'Translated', 'Language', 'Categories']
+        display_cols = [user_id_col, location_col, 'Concatenated', 'Translated', 'Language', 'Categories', 'Flagged']
         st.dataframe(df[display_cols])
-        for _, row in df.iterrows():
-            with st.expander(f"User {row[user_id_col]} Categories: {row['Categories']}"):
-                st.write("**Original:**", row['Concatenated'])
-                st.write("**Translated:**", row['Translated'])
+        if st.button("Spot-check 5 Random Comments"):
+            sample = df.sample(min(5, len(df)))
+            for _, row in sample.iterrows():
+                st.write(f"**User {row[user_id_col]}** - {row['Categories']}")
+                st.write(row['Translated'])
         download_link(df, "full_results.csv", "Download All Results")
 
         if st.button("Generate Report"):
-            report_text = generate_report(df[[user_id_col, location_col, 'Translated', 'Categories']])
+            report_text = generate_report(df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
             if report_text:
                 st.markdown(report_text)
                 docx_file = save_docx(report_text)
