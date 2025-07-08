@@ -2,6 +2,7 @@ import os
 import json
 from io import BytesIO
 from typing import List, Tuple
+from zipfile import ZipFile
 import time
 
 import altair as alt
@@ -290,12 +291,33 @@ if file and validate_file(file):
         download_link(df, "full_results.csv", "Download All Results")
 
         if st.button("Generate Report"):
-            report_text = generate_report(df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
-            if report_text:
-                st.markdown(report_text)
-                docx_file = save_docx(report_text)
-                pdf_file = save_pdf(report_text)
-                st.download_button("Download DOCX", docx_file, "report.docx")
-                st.download_button("Download PDF", pdf_file, "report.pdf")
+            segments = selected_segments if selected_segments else ["All"]
+            reports = []
+            for seg in segments:
+                seg_df = df if seg == "All" else df[df[location_col] == seg]
+                report_text = generate_report(
+                    seg_df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']]
+                )
+                if report_text:
+                    st.markdown(f"### Segment: {seg}")
+                    st.markdown(report_text)
+                    docx_file = save_docx(report_text)
+                    pdf_file = save_pdf(report_text)
+                    reports.append((seg, docx_file, pdf_file))
+
+            if reports:
+                zip_buffer = BytesIO()
+                with ZipFile(zip_buffer, 'w') as zipf:
+                    for seg, docx_io, pdf_io in reports:
+                        safe = str(seg).replace(' ', '_')
+                        zipf.writestr(f"{safe}.docx", docx_io.getvalue())
+                        zipf.writestr(f"{safe}.pdf", pdf_io.getvalue())
+                zip_buffer.seek(0)
+                st.download_button(
+                    "Download Reports ZIP",
+                    zip_buffer,
+                    "reports.zip",
+                    mime="application/zip",
+                )
 else:
     st.info("Upload a survey file to begin.")
