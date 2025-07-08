@@ -11,6 +11,55 @@ import streamlit as st
 from docx import Document
 from fpdf import FPDF
 
+
+def _find_id_cols(df: pd.DataFrame) -> List[str]:
+    """Heuristically identify user ID columns."""
+    return [c for c in df.columns if "id" in c.lower()]
+
+
+def _find_location_cols(df: pd.DataFrame) -> List[str]:
+    """Heuristically identify location columns."""
+    keywords = ["country", "location", "city", "state", "county", "region"]
+    return [c for c in df.columns if any(k in c.lower() for k in keywords)]
+
+
+def _find_free_text_cols(df: pd.DataFrame) -> List[str]:
+    """Return columns likely to be free-text responses."""
+    cols = []
+    for c in df.select_dtypes(include="object").columns:
+        if df[c].astype(str).str.len().mean() > 15:
+            cols.append(c)
+    return cols
+
+
+def _find_structured_cols(df: pd.DataFrame) -> List[str]:
+    """Return columns likely to be structured questions."""
+    cols = [c for c in df.select_dtypes(exclude="object").columns]
+    for c in df.select_dtypes(include="object").columns:
+        unique = df[c].nunique(dropna=True)
+        if unique > 0 and unique <= 20:
+            cols.append(c)
+    return cols
+
+
+def validate_required_columns(df: pd.DataFrame) -> None:
+    """Validate that the dataframe contains necessary column types."""
+    errors = []
+    if not _find_id_cols(df):
+        errors.append("No user ID column detected (look for 'id' in the name).")
+    if not _find_location_cols(df):
+        errors.append(
+            "No location column detected (try 'country', 'state' or 'location')."
+        )
+    if not _find_free_text_cols(df):
+        errors.append("No free-text columns detected.")
+    if not _find_structured_cols(df):
+        errors.append("No structured columns detected.")
+    if errors:
+        for err in errors:
+            st.error(err)
+        st.stop()
+
 # Set your OpenAI API key via environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY", "")
 MODEL = "gpt-4o-mini"
@@ -234,6 +283,7 @@ if file and validate_file(file):
             st.stop()
         if df.isnull().all(axis=0).any():
             st.warning("Some columns contain only missing values")
+        validate_required_columns(df)
     except Exception as e:
         st.error(f"Failed to read file: {e}")
         st.stop()
@@ -264,38 +314,47 @@ if file and validate_file(file):
     st.write(", ".join(CATEGORIES))
 
     if st.button("Process Data"):
-        with st.spinner("Processing free-text responses..."):
-            df = process_free_text(df, free_text_cols)
+        if not user_id_col:
+            st.error("Please select a user ID column before processing.")
+        elif not location_col:
+            st.error("Please select a location column before processing.")
+        elif not free_text_cols:
+            st.error("Please select at least one free-text column.")
+        elif not structured_cols:
+            st.error("Please select at least one structured column.")
+        else:
+            with st.spinner("Processing free-text responses..."):
+                df = process_free_text(df, free_text_cols)
 
-        st.success("Processing complete")
+            st.success("Processing complete")
 
-        df = review_translations(df, user_id_col)
+            df = review_translations(df, user_id_col)
 
-        st.subheader("Structured Data Analysis")
-        for col in structured_cols:
-            pivot = generate_pivot(df, col)
-            st.write(f"### {col}")
-            st.dataframe(pivot)
-            bar_chart(pivot, f"{col} Responses")
-            download_link(pivot, f"pivot_{col}.csv", f"Download {col} Pivot")
+            st.subheader("Structured Data Analysis")
+            for col in structured_cols:
+                pivot = generate_pivot(df, col)
+                st.write(f"### {col}")
+                st.dataframe(pivot)
+                bar_chart(pivot, f"{col} Responses")
+                download_link(pivot, f"pivot_{col}.csv", f"Download {col} Pivot")
 
-        st.subheader("Categorized Comments")
-        display_cols = [user_id_col, location_col, 'Concatenated', 'Translated', 'Language', 'Categories', 'Flagged']
-        st.dataframe(df[display_cols])
-        if st.button("Spot-check 5 Random Comments"):
-            sample = df.sample(min(5, len(df)))
-            for _, row in sample.iterrows():
-                st.write(f"**User {row[user_id_col]}** - {row['Categories']}")
-                st.write(row['Translated'])
-        download_link(df, "full_results.csv", "Download All Results")
+            st.subheader("Categorized Comments")
+            display_cols = [user_id_col, location_col, 'Concatenated', 'Translated', 'Language', 'Categories', 'Flagged']
+            st.dataframe(df[display_cols])
+            if st.button("Spot-check 5 Random Comments"):
+                sample = df.sample(min(5, len(df)))
+                for _, row in sample.iterrows():
+                    st.write(f"**User {row[user_id_col]}** - {row['Categories']}")
+                    st.write(row['Translated'])
+            download_link(df, "full_results.csv", "Download All Results")
 
-        if st.button("Generate Report"):
-            report_text = generate_report(df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
-            if report_text:
-                st.markdown(report_text)
-                docx_file = save_docx(report_text)
-                pdf_file = save_pdf(report_text)
-                st.download_button("Download DOCX", docx_file, "report.docx")
-                st.download_button("Download PDF", pdf_file, "report.pdf")
+            if st.button("Generate Report"):
+                report_text = generate_report(df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
+                if report_text:
+                    st.markdown(report_text)
+                    docx_file = save_docx(report_text)
+                    pdf_file = save_pdf(report_text)
+                    st.download_button("Download DOCX", docx_file, "report.docx")
+                    st.download_button("Download PDF", pdf_file, "report.pdf")
 else:
     st.info("Upload a survey file to begin.")
