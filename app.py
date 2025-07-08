@@ -11,7 +11,9 @@ import openai
 import pandas as pd
 import streamlit as st
 from docx import Document
+from docx.shared import Inches
 from fpdf import FPDF
+import tempfile
 import zipfile
 
 # Set your OpenAI API key via environment variable
@@ -206,9 +208,9 @@ def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
     return pivot
 
 
-def bar_chart(pivot: pd.DataFrame, title: str):
-    """Display a bar chart and provide PNG/SVG downloads."""
-    chart = (
+def create_chart(pivot: pd.DataFrame, title: str):
+    """Return an Altair chart object matching the on-screen chart."""
+    return (
         alt.Chart(pivot, background="white")
         .mark_bar()
         .encode(
@@ -223,6 +225,20 @@ def bar_chart(pivot: pd.DataFrame, title: str):
         )
         .properties(title=title, height=300)
     )
+
+
+def chart_png(pivot: pd.DataFrame, title: str) -> BytesIO:
+    """Return a PNG image buffer for the given pivot chart."""
+    chart = create_chart(pivot, title)
+    buf = BytesIO()
+    chart.save(buf, format="png")
+    buf.seek(0)
+    return buf
+
+
+def bar_chart(pivot: pd.DataFrame, title: str) -> BytesIO:
+    """Display a bar chart and provide PNG/SVG downloads. Returns PNG buffer."""
+    chart = create_chart(pivot, title)
     st.altair_chart(chart, use_container_width=True)
 
     png_buffer = BytesIO()
@@ -246,6 +262,8 @@ def bar_chart(pivot: pd.DataFrame, title: str):
             file_name=f"{title}.svg",
             mime="image/svg+xml",
         )
+
+    return png_buffer
 
 
 def download_link(df: pd.DataFrame, filename: str, label: str, help: str | None = None):
@@ -332,23 +350,64 @@ def generate_report(df: pd.DataFrame) -> str:
         return ""
 
 
-def save_docx(text: str) -> BytesIO:
+def save_docx(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
+    """Create a DOCX report with text, pivot tables and charts."""
     document = Document()
-    document.add_paragraph(text)
+    for para in text.split("\n"):
+        document.add_paragraph(para)
+
+    for title, pivot in pivots.items():
+        document.add_heading(title, level=2)
+        table = document.add_table(rows=1, cols=len(pivot.columns))
+        hdr = table.rows[0].cells
+        for idx, col in enumerate(pivot.columns):
+            hdr[idx].text = str(col)
+        for _, row in pivot.iterrows():
+            cells = table.add_row().cells
+            for idx, col in enumerate(pivot.columns):
+                cells[idx].text = str(row[col])
+        img = chart_png(pivot, f"{title} Responses")
+        img.name = "chart.png"
+        document.add_picture(img, width=Inches(6))
+
     bio = BytesIO()
     document.save(bio)
     bio.seek(0)
     return bio
 
 
-def save_pdf(text: str) -> BytesIO:
-    """Save text as a simple PDF."""
+def save_pdf(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
+    """Save text, pivot tables and charts as a PDF."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(True, margin=15)
     pdf.set_font("Arial", size=12)
     for line in text.split("\n"):
         pdf.multi_cell(0, 10, line)
+
+    for title, pivot in pivots.items():
+        pdf.ln(5)
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(0, 10, title, ln=True)
+        pdf.set_font("Arial", size=10)
+        col_widths = [80, 30, 30]
+        headers = list(pivot.columns)
+        for i, h in enumerate(headers):
+            w = col_widths[i] if i < len(col_widths) else 30
+            pdf.cell(w, 8, str(h), border=1)
+        pdf.ln()
+        for _, row in pivot.iterrows():
+            for i, h in enumerate(headers):
+                w = col_widths[i] if i < len(col_widths) else 30
+                pdf.cell(w, 8, str(row[h]), border=1)
+            pdf.ln()
+        img = chart_png(pivot, f"{title} Responses")
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(img.getvalue())
+            tmp.flush()
+            pdf.image(tmp.name, w=180)
+        os.unlink(tmp.name)
+
     bio = BytesIO()
     pdf.output(bio)
     bio.seek(0)
@@ -556,8 +615,11 @@ if file and validate_file(file):
                     segment_title = segment if segment is not None else "All"
                     st.markdown(f"## Report for {segment_title}")
                     st.markdown(report_text)
-                    docx_file = save_docx(report_text)
-                    pdf_file = save_pdf(report_text)
+                    pivot_dict = {
+                        col: generate_pivot(seg_df, col) for col in structured_cols
+                    }
+                    docx_file = save_docx(report_text, pivot_dict)
+                    pdf_file = save_pdf(report_text, pivot_dict)
                     if len(selected_segments) <= 1:
                         st.download_button(
                             "Download DOCX",
