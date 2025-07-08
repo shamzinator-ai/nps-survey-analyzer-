@@ -1,10 +1,12 @@
 import os
-import pandas as pd
-import streamlit as st
+import json
+from io import BytesIO
+from typing import List, Tuple
+
 import altair as alt
 import openai
-from io import BytesIO
-from typing import List
+import pandas as pd
+import streamlit as st
 from docx import Document
 from fpdf import FPDF
 
@@ -26,21 +28,26 @@ CATEGORIES = [
 
 # ----------------------------- Utility Functions -----------------------------
 
-def translate_text(text: str) -> str:
-    """Translate text to English using GPT-4o-mini."""
-    if not text:
-        return ""
-    prompt = f"Translate the following text to English.\nText: {text}"
+def translate_text(text: str) -> Tuple[str, str]:
+    """Detect language and translate text to English using GPT-4o-mini."""
+    if not text or not text.strip():
+        return "", ""
+    prompt = (
+        "Detect the language of the following text and translate it to English. "
+        "Respond in JSON with keys 'language' and 'translation'.\nText: " + text
+    )
     try:
         response = openai.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0
         )
-        return response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        data = json.loads(content)
+        return data.get("translation", "").strip(), data.get("language", "")
     except Exception as e:
         st.error(f"Translation failed: {e}")
-        return text
+        return text, ""
 
 
 def categorize_text(text: str) -> List[str]:
@@ -73,10 +80,12 @@ def categorize_text(text: str) -> List[str]:
 
 
 def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
-    """Return value counts with a total row."""
-    pivot = df[column].value_counts().reset_index()
-    pivot.columns = ['Response', 'Count']
-    total_row = pd.DataFrame({'Response': ['Total'], 'Count': [pivot['Count'].sum()]})
+    """Return value counts with percentage and total row."""
+    pivot = df[column].value_counts(dropna=False).reset_index()
+    pivot.columns = ["Response", "Count"]
+    total = pivot["Count"].sum()
+    pivot["Percent"] = (pivot["Count"] / total * 100).round(1)
+    total_row = pd.DataFrame({"Response": ["Total"], "Count": [total], "Percent": [100.0]})
     pivot = pd.concat([pivot, total_row], ignore_index=True)
     return pivot
 
@@ -151,20 +160,22 @@ def save_pdf(text: str) -> BytesIO:
 
 def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFrame:
     """Concatenate, translate and categorize free-text columns with progress."""
-    concat, translated, categories = [], [], []
+    concat, translated, categories, languages = [], [], [], []
     progress = st.progress(0.0)
     for i, (_, row) in enumerate(df.iterrows(), start=1):
         combined = " ".join(str(row[c]) if pd.notnull(row[c]) else "" for c in free_text_cols)
-        trans = translate_text(combined)
+        trans, lang = translate_text(combined)
         cats = categorize_text(trans)
         concat.append(combined)
         translated.append(trans)
+        languages.append(lang)
         categories.append(", ".join(cats))
         progress.progress(i / len(df))
     progress.empty()
-    df['Concatenated'] = concat
-    df['Translated'] = translated
-    df['Categories'] = categories
+    df["Concatenated"] = concat
+    df["Translated"] = translated
+    df["Language"] = languages
+    df["Categories"] = categories
     return df
 
 # ----------------------------- Streamlit App -----------------------------
@@ -173,25 +184,45 @@ st.set_page_config(page_title="NPS Survey Analyzer", layout="wide")
 st.title("NPS Survey Analyzer")
 
 st.sidebar.header("1. Upload Survey Data")
-file = st.sidebar.file_uploader("Upload CSV or Excel", type=["csv", "xlsx"])
+file = st.sidebar.file_uploader(
+    "Upload CSV, XLS or XLSX", type=["csv", "xls", "xlsx"],
+    help="File must include a unique ID, location, at least one structured and one free-text column."
+)
 
 if file:
-    if file.name.endswith('csv'):
-        df = pd.read_csv(file)
-    else:
-        df = pd.read_excel(file)
-    st.subheader("Data Preview")
-    st.dataframe(df.head())
+    try:
+        if file.name.endswith(("xls", "xlsx")):
+            df = pd.read_excel(file)
+        else:
+            df = pd.read_csv(file)
+    except Exception as e:
+        st.error(f"Failed to read file: {e}")
+        st.stop()
 
-    segment_options = df['Country'].dropna().unique().tolist() if 'Country' in df.columns else []
-    selected_segments = st.multiselect("Filter by Country (optional)", options=segment_options)
-    if selected_segments:
-        df = df[df['Country'].isin(selected_segments)]
+    st.subheader("Data Preview")
+    st.dataframe(df.head(10))
+    st.write(f"**Rows:** {df.shape[0]}  **Columns:** {df.shape[1]}")
+    st.write("**Columns:**", ", ".join(df.columns))
+
+    user_id_col = st.selectbox("Column with User ID", options=df.columns)
+    location_col = st.selectbox("Column with County/Location", options=df.columns)
 
     free_text_cols = st.multiselect(
-        "Select free-text columns", options=df.columns.tolist()
+        "Free-text response columns", options=[c for c in df.columns if c not in [user_id_col, location_col]]
     )
-    structured_cols = [c for c in df.columns if c not in free_text_cols]
+
+    structured_cols = st.multiselect(
+        "Structured question columns", options=[c for c in df.columns if c not in free_text_cols + [user_id_col, location_col]],
+        default=[c for c in df.columns if c not in free_text_cols + [user_id_col, location_col]]
+    )
+
+    segment_options = df[location_col].dropna().unique().tolist()
+    selected_segments = st.multiselect("Filter by segment (optional)", options=segment_options)
+    if selected_segments:
+        df = df[df[location_col].isin(selected_segments)]
+
+    st.markdown("### Available Categories")
+    st.write(", ".join(CATEGORIES))
 
     if st.button("Process Data"):
         with st.spinner("Processing free-text responses..."):
@@ -208,15 +239,16 @@ if file:
             download_link(pivot, f"pivot_{col}.csv", f"Download {col} Pivot")
 
         st.subheader("Categorized Comments")
-        st.dataframe(df[['User_ID', 'Country', 'Concatenated', 'Translated', 'Categories']])
+        display_cols = [user_id_col, location_col, 'Concatenated', 'Translated', 'Language', 'Categories']
+        st.dataframe(df[display_cols])
         for _, row in df.iterrows():
-            with st.expander(f"User {row['User_ID']} Categories: {row['Categories']}"):
+            with st.expander(f"User {row[user_id_col]} Categories: {row['Categories']}"):
                 st.write("**Original:**", row['Concatenated'])
                 st.write("**Translated:**", row['Translated'])
         download_link(df, "full_results.csv", "Download All Results")
 
         if st.button("Generate Report"):
-            report_text = generate_report(df[['User_ID', 'Country', 'Translated', 'Categories']])
+            report_text = generate_report(df[[user_id_col, location_col, 'Translated', 'Categories']])
             if report_text:
                 st.markdown(report_text)
                 docx_file = save_docx(report_text)

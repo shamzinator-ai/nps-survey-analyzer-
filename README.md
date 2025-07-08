@@ -5,14 +5,15 @@ This repository contains a simple Streamlit application for analyzing NPS survey
 ## Features
 
 - Upload CSV or Excel survey data.
-- Select which columns contain free-text responses.
+- Select columns for User ID, location, structured questions and free-text responses.
 - Automatic translation of comments to English using GPT-4o-mini.
 - AI-driven categorization into a predefined list of categories.
-- Pivot tables and bar charts for structured questions.
+- Pivot tables with percentages and bar charts for structured questions.
 - Downloadable results and pivot tables.
 - Generate a narrative report and download it as a DOCX or PDF file.
 - Progress bars for long-running translation and categorization tasks.
 - Expandable comments for spot-checking AI results.
+- Language detection stored alongside translations.
 
 ## Requirements
 
