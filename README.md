@@ -13,6 +13,7 @@ This repository contains a simple Streamlit application for analyzing NPS survey
 - Generate a narrative report and download it as a DOCX or PDF file.
 - Progress bars for long-running translation and categorization tasks.
 - Expandable comments for spot-checking AI results.
+- Category descriptions are available in the sidebar expander.
 - Language detection stored alongside translations.
 
 ## Requirements
