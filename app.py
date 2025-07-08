@@ -135,12 +135,12 @@ def categorize_text(text: str) -> List[str]:
         return []
 
 
-async def async_translate_batch(texts: List[str]) -> List[Tuple[str, str]]:
+async def async_translate_batch(texts: List[str]) -> List[Tuple[str, str, int, str]]:
     """Translate a batch of texts concurrently using OpenAI's async API."""
 
-    async def _translate(text: str) -> Tuple[str, str]:
+    async def _translate(text: str) -> Tuple[str, str, int, str]:
         if not text or not text.strip():
-            return "", ""
+            return "", "", 0, ""
         prompt = (
             "Detect the language of the following text and translate it to English."
             "Respond in JSON with keys 'language' and 'translation'.\nText: " + text
@@ -153,16 +153,23 @@ async def async_translate_batch(texts: List[str]) -> List[Tuple[str, str]]:
             )
             content = response.choices[0].message.content
             data = json.loads(content)
-            return data.get("translation", "").strip(), data.get("language", "")
+            tokens = response.usage.total_tokens if getattr(response, "usage", None) else 0
+            finish = response.choices[0].finish_reason or ""
+            return (
+                data.get("translation", "").strip(),
+                data.get("language", ""),
+                tokens,
+                finish,
+            )
         except Exception as e:
             st.error(f"Translation failed: {e}")
-            return text, ""
+            return text, "", 0, ""
 
     tasks = [asyncio.create_task(_translate(t)) for t in texts]
     return await asyncio.gather(*tasks)
 
 
-async def async_categorize_batch(texts: List[str]) -> List[List[str]]:
+async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], int, str]]:
     """Categorize a batch of texts concurrently."""
 
     categories_str = ", ".join(CATEGORIES)
@@ -172,9 +179,9 @@ async def async_categorize_batch(texts: List[str]) -> List[List[str]]:
         "matching categories. If none apply, return 'None'."
     )
 
-    async def _categorize(text: str) -> List[str]:
+    async def _categorize(text: str) -> Tuple[List[str], int, str]:
         if not text:
-            return []
+            return [], 0, ""
         user_prompt = f"Categories: {categories_str}\nComment: {text}"
         try:
             response = await openai.chat.completions.create(
@@ -186,12 +193,14 @@ async def async_categorize_batch(texts: List[str]) -> List[List[str]]:
                 temperature=0,
             )
             result = response.choices[0].message.content.strip()
+            tokens = response.usage.total_tokens if getattr(response, "usage", None) else 0
+            finish = response.choices[0].finish_reason or ""
             if result.lower() == "none":
-                return []
-            return [c.strip() for c in result.split(',')]
+                return [], tokens, finish
+            return [c.strip() for c in result.split(',')], tokens, finish
         except Exception as e:
             st.error(f"Categorization failed: {e}")
-            return []
+            return [], 0, ""
 
     tasks = [asyncio.create_task(_categorize(t)) for t in texts]
     return await asyncio.gather(*tasks)
@@ -301,6 +310,8 @@ def review_translations(df: pd.DataFrame, id_col: str) -> pd.DataFrame:
     for idx, row in df.iterrows():
         with st.expander(f"User {row[id_col]}"):
             st.write("**Original:**", row["Concatenated"])
+            st.write(f"Tokens used: {row.get('ModelTokens', 0)}")
+            st.write(f"Finish reason: {row.get('FinishReason', '')}")
             new_trans = st.text_area(
                 "Translated", value=row["Translated"], key=f"trans_{idx}",
                 help="Edit the AI translation if it looks incorrect.")
@@ -424,6 +435,8 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFra
     translated: List[str] = ["" for _ in concat]
     languages: List[str] = ["" for _ in concat]
     categories: List[str] = ["" for _ in concat]
+    token_usage: List[int] = [0 for _ in concat]
+    finish_reasons: List[str] = ["" for _ in concat]
 
     progress = st.progress(0.0, text="Starting...")
     start_time = time.time()
@@ -433,15 +446,22 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFra
         batch_texts = concat[start_idx : start_idx + batch_size]
 
         trans_lang = asyncio.run(async_translate_batch(batch_texts))
-        batch_trans = [t for t, _ in trans_lang]
-        batch_langs = [l for _, l in trans_lang]
+        batch_trans = [t for t, _, _, _ in trans_lang]
+        batch_langs = [l for _, l, _, _ in trans_lang]
+        batch_toks_trans = [tok for _, _, tok, _ in trans_lang]
+        batch_finish_trans = [fin for _, _, _, fin in trans_lang]
 
-        batch_cats = asyncio.run(async_categorize_batch(batch_trans))
+        batch_cats_data = asyncio.run(async_categorize_batch(batch_trans))
+        batch_cats = [cats for cats, _, _ in batch_cats_data]
+        batch_toks_cat = [tok for _, tok, _ in batch_cats_data]
+        batch_finish_cat = [fin for _, _, fin in batch_cats_data]
 
         for offset, idx in enumerate(range(start_idx, min(start_idx + batch_size, len(concat)))):
             translated[idx] = batch_trans[offset]
             languages[idx] = batch_langs[offset]
             categories[idx] = ", ".join(batch_cats[offset])
+            token_usage[idx] = batch_toks_trans[offset] + batch_toks_cat[offset]
+            finish_reasons[idx] = f"{batch_finish_trans[offset]}; {batch_finish_cat[offset]}"
 
         processed = min(start_idx + batch_size, len(concat))
         rate = (time.time() - start_time) / processed
@@ -454,6 +474,8 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFra
     df["Translated"] = translated
     df["Language"] = languages
     df["Categories"] = categories
+    df["ModelTokens"] = token_usage
+    df["FinishReason"] = finish_reasons
     return df
 
 # ----------------------------- Streamlit App -----------------------------
@@ -581,7 +603,17 @@ if file and validate_file(file):
                 )
 
         st.subheader("Categorized Comments")
-        display_cols = [user_id_col, location_col, 'Concatenated', 'Translated', 'Language', 'Categories', 'Flagged']
+        display_cols = [
+            user_id_col,
+            location_col,
+            'Concatenated',
+            'Translated',
+            'Language',
+            'Categories',
+            'ModelTokens',
+            'FinishReason',
+            'Flagged',
+        ]
         st.dataframe(df[display_cols])
         if st.button(
             "Spot-check 5 Random Comments",
