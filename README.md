@@ -35,3 +35,14 @@ streamlit run app.py
 Use the sidebar to upload your survey file. The app will guide you through selecting free-text columns, processing translations with progress bars, and generating downloadable pivot tables, charts, and reports.
 
 An example dataset `example_data.csv` is included for testing.
+
+## Troubleshooting
+
+If the app fails to start or behaves unexpectedly, try the following:
+
+1. **Missing dependencies** – install them with `pip install -r requirements.txt`.
+2. **OpenAI API errors** – ensure the `OPENAI_API_KEY` environment variable is set.
+3. **Large files** – the uploader accepts files up to 10MB.
+4. **Encoding issues** – save your CSV in UTF-8 format.
+
+For more help open an issue on GitHub.
