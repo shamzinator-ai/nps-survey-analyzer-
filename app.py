@@ -1,0 +1,227 @@
+import os
+import pandas as pd
+import streamlit as st
+import altair as alt
+import openai
+from io import BytesIO
+from typing import List
+from docx import Document
+from fpdf import FPDF
+
+# Set your OpenAI API key via environment variable
+openai.api_key = os.getenv("OPENAI_API_KEY", "")
+MODEL = "gpt-4o-mini"
+
+CATEGORIES = [
+    "Search/Navigation", "Resource Mention", "User Question", "Translation Mention",
+    "User Suggestion", "Pain Point", "AI", "Competitor", "Site Error", "Social Media",
+    "Phonics", "Price Mention", "Accidental Purchase", "Resource Preview",
+    "Resource Request", "Editing/Adapting Resource", "Resource Quality", "EDI", "SEND",
+    "Partnership", "Parental Leave", "Email", "Email Verification", "Not Used Enough",
+    "Legal", "Glassdoor", "GDPR", "Free Resources", "Download Issues", "Content Errors",
+    "Account Access", "Already Cancelled", "Auto-renewal", "Book Club",
+    "Cancellation Difficulty", "CS General", "CS Negative", "CS Positive",
+    "Negative Words", "Positive Words"
+]
+
+# ----------------------------- Utility Functions -----------------------------
+
+def translate_text(text: str) -> str:
+    """Translate text to English using GPT-4o-mini."""
+    if not text:
+        return ""
+    prompt = f"Translate the following text to English.\nText: {text}"
+    try:
+        response = openai.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        st.error(f"Translation failed: {e}")
+        return text
+
+
+def categorize_text(text: str) -> List[str]:
+    """Categorize text using GPT-4o-mini."""
+    if not text:
+        return []
+    categories_str = ", ".join(CATEGORIES)
+    system_prompt = (
+        "You are a helpful assistant that tags survey comments with all relevant "
+        "categories from the provided list. Return a comma-separated list of "
+        "matching categories. If none apply, return 'None'."
+    )
+    user_prompt = f"Categories: {categories_str}\nComment: {text}"
+    try:
+        response = openai.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0
+        )
+        result = response.choices[0].message.content.strip()
+        if result.lower() == "none":
+            return []
+        return [c.strip() for c in result.split(',')]
+    except Exception as e:
+        st.error(f"Categorization failed: {e}")
+        return []
+
+
+def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
+    """Return value counts with a total row."""
+    pivot = df[column].value_counts().reset_index()
+    pivot.columns = ['Response', 'Count']
+    total_row = pd.DataFrame({'Response': ['Total'], 'Count': [pivot['Count'].sum()]})
+    pivot = pd.concat([pivot, total_row], ignore_index=True)
+    return pivot
+
+
+def bar_chart(pivot: pd.DataFrame, title: str):
+    chart = alt.Chart(pivot).mark_bar().encode(
+        x=alt.X('Response:N', sort='-y'),
+        y='Count:Q',
+        tooltip=['Response', 'Count']
+    ).properties(title=title, height=300)
+    st.altair_chart(chart, use_container_width=True)
+
+
+def download_link(df: pd.DataFrame, filename: str, label: str):
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button(label, csv, file_name=filename, mime='text/csv')
+
+
+def generate_report(df: pd.DataFrame) -> str:
+    """Generate a detailed report covering all requested sections."""
+    prompt = (
+        "You are an expert analyst summarising NPS survey feedback. "
+        "Write a detailed report with the following sections:\n"
+        "Executive Summary of findings;\n"
+        "Customer Suggestions with quoted comments and IDs;\n"
+        "Localisation Issues, especially for US users;\n"
+        "Pain Points;\n"
+        "Negative Comments;\n"
+        "Feedback not captured in categories;\n"
+        "Suggested Next Steps with rationale, priority and confidence level;\n"
+        "Devils Advocate (limitations and possible biases);\n"
+        "Conclusion with summary and non-obvious recommendations.\n"
+        "For every statement include raw number and percentage of supporting comments. "
+        "Avoid bullet points and write in narrative paragraphs."
+    )
+    user_content = df.to_csv(index=False)
+    try:
+        response = openai.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "system", "content": prompt},
+                      {"role": "user", "content": user_content}],
+            temperature=0.3,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        st.error(f"Report generation failed: {e}")
+        return ""
+
+
+def save_docx(text: str) -> BytesIO:
+    document = Document()
+    document.add_paragraph(text)
+    bio = BytesIO()
+    document.save(bio)
+    bio.seek(0)
+    return bio
+
+
+def save_pdf(text: str) -> BytesIO:
+    """Save text as a simple PDF."""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(True, margin=15)
+    pdf.set_font("Arial", size=12)
+    for line in text.split("\n"):
+        pdf.multi_cell(0, 10, line)
+    bio = BytesIO()
+    pdf.output(bio)
+    bio.seek(0)
+    return bio
+
+
+def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFrame:
+    """Concatenate, translate and categorize free-text columns with progress."""
+    concat, translated, categories = [], [], []
+    progress = st.progress(0.0)
+    for i, (_, row) in enumerate(df.iterrows(), start=1):
+        combined = " ".join(str(row[c]) if pd.notnull(row[c]) else "" for c in free_text_cols)
+        trans = translate_text(combined)
+        cats = categorize_text(trans)
+        concat.append(combined)
+        translated.append(trans)
+        categories.append(", ".join(cats))
+        progress.progress(i / len(df))
+    progress.empty()
+    df['Concatenated'] = concat
+    df['Translated'] = translated
+    df['Categories'] = categories
+    return df
+
+# ----------------------------- Streamlit App -----------------------------
+
+st.set_page_config(page_title="NPS Survey Analyzer", layout="wide")
+st.title("NPS Survey Analyzer")
+
+st.sidebar.header("1. Upload Survey Data")
+file = st.sidebar.file_uploader("Upload CSV or Excel", type=["csv", "xlsx"])
+
+if file:
+    if file.name.endswith('csv'):
+        df = pd.read_csv(file)
+    else:
+        df = pd.read_excel(file)
+    st.subheader("Data Preview")
+    st.dataframe(df.head())
+
+    segment_options = df['Country'].dropna().unique().tolist() if 'Country' in df.columns else []
+    selected_segments = st.multiselect("Filter by Country (optional)", options=segment_options)
+    if selected_segments:
+        df = df[df['Country'].isin(selected_segments)]
+
+    free_text_cols = st.multiselect(
+        "Select free-text columns", options=df.columns.tolist()
+    )
+    structured_cols = [c for c in df.columns if c not in free_text_cols]
+
+    if st.button("Process Data"):
+        with st.spinner("Processing free-text responses..."):
+            df = process_free_text(df, free_text_cols)
+
+        st.success("Processing complete")
+
+        st.subheader("Structured Data Analysis")
+        for col in structured_cols:
+            pivot = generate_pivot(df, col)
+            st.write(f"### {col}")
+            st.dataframe(pivot)
+            bar_chart(pivot, f"{col} Responses")
+            download_link(pivot, f"pivot_{col}.csv", f"Download {col} Pivot")
+
+        st.subheader("Categorized Comments")
+        st.dataframe(df[['User_ID', 'Country', 'Concatenated', 'Translated', 'Categories']])
+        for _, row in df.iterrows():
+            with st.expander(f"User {row['User_ID']} Categories: {row['Categories']}"):
+                st.write("**Original:**", row['Concatenated'])
+                st.write("**Translated:**", row['Translated'])
+        download_link(df, "full_results.csv", "Download All Results")
+
+        if st.button("Generate Report"):
+            report_text = generate_report(df[['User_ID', 'Country', 'Translated', 'Categories']])
+            if report_text:
+                st.markdown(report_text)
+                docx_file = save_docx(report_text)
+                pdf_file = save_pdf(report_text)
+                st.download_button("Download DOCX", docx_file, "report.docx")
+                st.download_button("Download PDF", pdf_file, "report.pdf")
+else:
+    st.info("Upload a survey file to begin.")
