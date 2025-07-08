@@ -1,6 +1,6 @@
 import os
 import json
-from io import BytesIO
+from io import BytesIO, StringIO
 from typing import List, Tuple
 import time
 import hashlib
@@ -99,12 +99,45 @@ def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
 
 
 def bar_chart(pivot: pd.DataFrame, title: str):
-    chart = alt.Chart(pivot).mark_bar().encode(
-        x=alt.X('Response:N', sort='-y'),
-        y='Count:Q',
-        tooltip=['Response', 'Count']
-    ).properties(title=title, height=300)
+    """Display a bar chart and provide PNG/SVG downloads."""
+    chart = (
+        alt.Chart(pivot, background="white")
+        .mark_bar()
+        .encode(
+            x=alt.X("Response:N", sort="-y"),
+            y="Count:Q",
+            color=alt.Color(
+                "Count:Q",
+                scale=alt.Scale(scheme="blues"),
+                legend=None,
+            ),
+            tooltip=["Response", "Count"],
+        )
+        .properties(title=title, height=300)
+    )
     st.altair_chart(chart, use_container_width=True)
+
+    png_buffer = BytesIO()
+    chart.save(png_buffer, format="png")
+    png_buffer.seek(0)
+    svg_buffer = StringIO()
+    chart.save(svg_buffer, format="svg")
+    svg_bytes = svg_buffer.getvalue().encode("utf-8")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            "Download Chart PNG",
+            png_buffer,
+            file_name=f"{title}.png",
+            mime="image/png",
+        )
+    with col2:
+        st.download_button(
+            "Download Chart SVG",
+            svg_bytes,
+            file_name=f"{title}.svg",
+            mime="image/svg+xml",
+        )
 
 
 def download_link(df: pd.DataFrame, filename: str, label: str, help: str | None = None):
