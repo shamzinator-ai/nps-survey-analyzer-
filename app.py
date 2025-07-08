@@ -35,10 +35,13 @@ CATEGORIES = [
 # ----------------------------- Utility Functions -----------------------------
 
 @st.cache_data(show_spinner=False)
-def translate_text(text: str) -> Tuple[str, str]:
-    """Detect language and translate text to English using GPT-4o-mini."""
+def translate_text(text: str) -> Tuple[str, str, int, str]:
+    """Detect language and translate text to English using GPT-4o-mini.
+
+    Returns translated text, detected language, token usage and finish reason.
+    """
     if not text or not text.strip():
-        return "", ""
+        return "", "", 0, ""
     prompt = (
         "Detect the language of the following text and translate it to English. "
         "Respond in JSON with keys 'language' and 'translation'.\nText: " + text
@@ -51,17 +54,22 @@ def translate_text(text: str) -> Tuple[str, str]:
         )
         content = response.choices[0].message.content
         data = json.loads(content)
-        return data.get("translation", "").strip(), data.get("language", "")
+        tokens = response.usage.total_tokens if response.usage else 0
+        finish = response.choices[0].finish_reason or ""
+        return data.get("translation", "").strip(), data.get("language", ""), tokens, finish
     except Exception as e:
         st.error(f"Translation failed: {e}")
-        return text, ""
+        return text, "", 0, "error"
 
 
 @st.cache_data(show_spinner=False)
-def categorize_text(text: str) -> List[str]:
-    """Categorize text using GPT-4o-mini."""
+def categorize_text(text: str) -> Tuple[List[str], int, str]:
+    """Categorize text using GPT-4o-mini.
+
+    Returns a list of categories, token usage and finish reason.
+    """
     if not text:
-        return []
+        return [], 0, ""
     categories_str = ", ".join(CATEGORIES)
     system_prompt = (
         "You are a helpful assistant that tags survey comments with all relevant "
@@ -79,12 +87,14 @@ def categorize_text(text: str) -> List[str]:
             temperature=0
         )
         result = response.choices[0].message.content.strip()
+        tokens = response.usage.total_tokens if response.usage else 0
+        finish = response.choices[0].finish_reason or ""
         if result.lower() == "none":
-            return []
-        return [c.strip() for c in result.split(',')]
+            return [], tokens, finish
+        return [c.strip() for c in result.split(',')], tokens, finish
     except Exception as e:
         st.error(f"Categorization failed: {e}")
-        return []
+        return [], 0, "error"
 
 
 def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
@@ -136,6 +146,10 @@ def review_translations(df: pd.DataFrame, id_col: str) -> pd.DataFrame:
                 default=[c.strip() for c in row["Categories"].split(',') if c],
                 key=f"cat_{idx}",
                 help="Add or remove categories for this comment.")
+            st.caption(
+                f"Translate tokens: {row['TranslateTokens']} (finish: {row['TranslateFinish']}) "
+                f"| Categorize tokens: {row['CategorizeTokens']} (finish: {row['CategorizeFinish']})"
+            )
             flag = st.checkbox(
                 "Flag for review", key=f"flag_{idx}",
                 help="Mark this comment for manual follow-up.")
@@ -201,18 +215,27 @@ def save_pdf(text: str) -> BytesIO:
 
 
 def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFrame:
-    """Concatenate, translate and categorize free-text columns with progress."""
+    """Concatenate, translate and categorize free-text columns with progress.
+
+    Adds token usage and finish reason metadata for each model call.
+    """
     concat, translated, categories, languages = [], [], [], []
+    trans_tokens, trans_finish = [], []
+    cat_tokens, cat_finish = [], []
     progress = st.progress(0.0, text="Starting...")
     start = time.time()
     for i, (_, row) in enumerate(df.iterrows(), start=1):
         combined = " ".join(str(row[c]) if pd.notnull(row[c]) else "" for c in free_text_cols)
-        trans, lang = translate_text(combined)
-        cats = categorize_text(trans)
+        trans, lang, t_tok, t_fin = translate_text(combined)
+        cats, c_tok, c_fin = categorize_text(trans)
         concat.append(combined)
         translated.append(trans)
         languages.append(lang)
         categories.append(", ".join(cats))
+        trans_tokens.append(t_tok)
+        trans_finish.append(t_fin)
+        cat_tokens.append(c_tok)
+        cat_finish.append(c_fin)
         rate = (time.time() - start) / i
         remaining = rate * (len(df) - i)
         progress.progress(i / len(df), text=f"Processing... ETA {int(remaining)}s")
@@ -221,6 +244,10 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFra
     df["Translated"] = translated
     df["Language"] = languages
     df["Categories"] = categories
+    df["TranslateTokens"] = trans_tokens
+    df["TranslateFinish"] = trans_finish
+    df["CategorizeTokens"] = cat_tokens
+    df["CategorizeFinish"] = cat_finish
     return df
 
 # ----------------------------- Streamlit App -----------------------------
@@ -325,7 +352,19 @@ if file and validate_file(file):
             )
 
         st.subheader("Categorized Comments")
-        display_cols = [user_id_col, location_col, 'Concatenated', 'Translated', 'Language', 'Categories', 'Flagged']
+        display_cols = [
+            user_id_col,
+            location_col,
+            'Concatenated',
+            'Translated',
+            'Language',
+            'Categories',
+            'TranslateTokens',
+            'TranslateFinish',
+            'CategorizeTokens',
+            'CategorizeFinish',
+            'Flagged',
+        ]
         st.dataframe(df[display_cols])
         if st.button(
             "Spot-check 5 Random Comments",
