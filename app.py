@@ -12,6 +12,7 @@ import pandas as pd
 import streamlit as st
 from docx import Document
 from fpdf import FPDF
+import zipfile
 
 # Set your OpenAI API key via environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY", "")
@@ -542,22 +543,44 @@ if file and validate_file(file):
             "Generate Report",
             help="Create a narrative summary of all findings."
         ):
-            report_text = generate_report(df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
-            if report_text:
-                st.markdown(report_text)
-                docx_file = save_docx(report_text)
-                pdf_file = save_pdf(report_text)
+            segments_to_process = selected_segments if selected_segments else [None]
+            zip_buffer = BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                for segment in segments_to_process:
+                    seg_df = df if segment is None else df[df[location_col] == segment]
+                    if seg_df.empty:
+                        continue
+                    report_text = generate_report(seg_df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
+                    if not report_text:
+                        continue
+                    segment_title = segment if segment is not None else "All"
+                    st.markdown(f"## Report for {segment_title}")
+                    st.markdown(report_text)
+                    docx_file = save_docx(report_text)
+                    pdf_file = save_pdf(report_text)
+                    if len(selected_segments) <= 1:
+                        st.download_button(
+                            "Download DOCX",
+                            docx_file,
+                            f"{segment_title}_report.docx",
+                            help="Save the report as a Word document."
+                        )
+                        st.download_button(
+                            "Download PDF",
+                            pdf_file,
+                            f"{segment_title}_report.pdf",
+                            help="Save the report as a PDF file."
+                        )
+                    else:
+                        zipf.writestr(f"{segment_title}_report.docx", docx_file.getvalue())
+                        zipf.writestr(f"{segment_title}_report.pdf", pdf_file.getvalue())
+            if len(selected_segments) > 1:
+                zip_buffer.seek(0)
                 st.download_button(
-                    "Download DOCX",
-                    docx_file,
-                    "report.docx",
-                    help="Save the report as a Word document."
-                )
-                st.download_button(
-                    "Download PDF",
-                    pdf_file,
-                    "report.pdf",
-                    help="Save the report as a PDF file."
+                    "Download Reports ZIP",
+                    zip_buffer,
+                    "reports.zip",
+                    help="Download all segment reports as a ZIP file."
                 )
 else:
     st.info("Upload a survey file to begin.")
