@@ -29,10 +29,10 @@ CATEGORIES = [
 
 # ----------------------------- Utility Functions -----------------------------
 
-def translate_text(text: str) -> Tuple[str, str]:
+def translate_text(text: str) -> Tuple[str, str, int, str]:
     """Detect language and translate text to English using GPT-4o-mini."""
     if not text or not text.strip():
-        return "", ""
+        return "", "", 0, ""
     prompt = (
         "Detect the language of the following text and translate it to English. "
         "Respond in JSON with keys 'language' and 'translation'.\nText: " + text
@@ -44,17 +44,19 @@ def translate_text(text: str) -> Tuple[str, str]:
             temperature=0
         )
         content = response.choices[0].message.content
+        tokens = getattr(response.usage, "total_tokens", 0)
+        finish = response.choices[0].finish_reason or ""
         data = json.loads(content)
-        return data.get("translation", "").strip(), data.get("language", "")
+        return data.get("translation", "").strip(), data.get("language", ""), tokens, finish
     except Exception as e:
         st.error(f"Translation failed: {e}")
-        return text, ""
+        return text, "", 0, "error"
 
 
-def categorize_text(text: str) -> List[str]:
+def categorize_text(text: str) -> Tuple[List[str], int, str]:
     """Categorize text using GPT-4o-mini."""
     if not text:
-        return []
+        return [], 0, ""
     categories_str = ", ".join(CATEGORIES)
     system_prompt = (
         "You are a helpful assistant that tags survey comments with all relevant "
@@ -72,12 +74,14 @@ def categorize_text(text: str) -> List[str]:
             temperature=0
         )
         result = response.choices[0].message.content.strip()
+        tokens = getattr(response.usage, "total_tokens", 0)
+        finish = response.choices[0].finish_reason or ""
         if result.lower() == "none":
-            return []
-        return [c.strip() for c in result.split(',')]
+            return [], tokens, finish
+        return [c.strip() for c in result.split(',')], tokens, finish
     except Exception as e:
         st.error(f"Categorization failed: {e}")
-        return []
+        return [], 0, "error"
 
 
 def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
@@ -121,6 +125,10 @@ def review_translations(df: pd.DataFrame, id_col: str) -> pd.DataFrame:
     for idx, row in df.iterrows():
         with st.expander(f"User {row[id_col]}"):
             st.write("**Original:**", row["Concatenated"])
+            st.write(
+                f"Tokens - Translate: {row['TranslationTokens']} (finish: {row['TranslationFinish']}), "
+                f"Categorize: {row['CategorizationTokens']} (finish: {row['CategorizationFinish']})"
+            )
             new_trans = st.text_area(
                 "Translated", value=row["Translated"], key=f"trans_{idx}")
             new_cats = st.multiselect(
@@ -135,7 +143,7 @@ def review_translations(df: pd.DataFrame, id_col: str) -> pd.DataFrame:
     return df
 
 
-def generate_report(df: pd.DataFrame) -> str:
+def generate_report(df: pd.DataFrame) -> Tuple[str, int, str]:
     """Generate a detailed report covering all requested sections."""
     prompt = (
         "You are an expert analyst summarising NPS survey feedback. "
@@ -160,10 +168,12 @@ def generate_report(df: pd.DataFrame) -> str:
                       {"role": "user", "content": user_content}],
             temperature=0.3,
         )
-        return response.choices[0].message.content.strip()
+        tokens = getattr(response.usage, "total_tokens", 0)
+        finish = response.choices[0].finish_reason or ""
+        return response.choices[0].message.content.strip(), tokens, finish
     except Exception as e:
         st.error(f"Report generation failed: {e}")
-        return ""
+        return "", 0, "error"
 
 
 def save_docx(text: str) -> BytesIO:
@@ -192,16 +202,22 @@ def save_pdf(text: str) -> BytesIO:
 def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFrame:
     """Concatenate, translate and categorize free-text columns with progress."""
     concat, translated, categories, languages = [], [], [], []
+    trans_tokens, trans_finish = [], []
+    cat_tokens, cat_finish = [], []
     progress = st.progress(0.0, text="Starting...")
     start = time.time()
     for i, (_, row) in enumerate(df.iterrows(), start=1):
         combined = " ".join(str(row[c]) if pd.notnull(row[c]) else "" for c in free_text_cols)
-        trans, lang = translate_text(combined)
-        cats = categorize_text(trans)
+        trans, lang, t_tokens, t_finish = translate_text(combined)
+        cats, c_tokens, c_finish = categorize_text(trans)
         concat.append(combined)
         translated.append(trans)
         languages.append(lang)
         categories.append(", ".join(cats))
+        trans_tokens.append(t_tokens)
+        trans_finish.append(t_finish)
+        cat_tokens.append(c_tokens)
+        cat_finish.append(c_finish)
         rate = (time.time() - start) / i
         remaining = rate * (len(df) - i)
         progress.progress(i / len(df), text=f"Processing... ETA {int(remaining)}s")
@@ -210,6 +226,10 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFra
     df["Translated"] = translated
     df["Language"] = languages
     df["Categories"] = categories
+    df["TranslationTokens"] = trans_tokens
+    df["TranslationFinish"] = trans_finish
+    df["CategorizationTokens"] = cat_tokens
+    df["CategorizationFinish"] = cat_finish
     return df
 
 # ----------------------------- Streamlit App -----------------------------
@@ -280,7 +300,19 @@ if file and validate_file(file):
             download_link(pivot, f"pivot_{col}.csv", f"Download {col} Pivot")
 
         st.subheader("Categorized Comments")
-        display_cols = [user_id_col, location_col, 'Concatenated', 'Translated', 'Language', 'Categories', 'Flagged']
+        display_cols = [
+            user_id_col,
+            location_col,
+            'Concatenated',
+            'Translated',
+            'Language',
+            'Categories',
+            'TranslationTokens',
+            'CategorizationTokens',
+            'TranslationFinish',
+            'CategorizationFinish',
+            'Flagged',
+        ]
         st.dataframe(df[display_cols])
         if st.button("Spot-check 5 Random Comments"):
             sample = df.sample(min(5, len(df)))
@@ -290,9 +322,14 @@ if file and validate_file(file):
         download_link(df, "full_results.csv", "Download All Results")
 
         if st.button("Generate Report"):
-            report_text = generate_report(df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
+            report_text, report_tokens, report_finish = generate_report(
+                df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']]
+            )
             if report_text:
                 st.markdown(report_text)
+                st.write(
+                    f"Model tokens used: {report_tokens} | Finish reason: {report_finish}"
+                )
                 docx_file = save_docx(report_text)
                 pdf_file = save_pdf(report_text)
                 st.download_button("Download DOCX", docx_file, "report.docx")
