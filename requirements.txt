@@ -4,3 +4,5 @@ openai
 altair
 python-docx
 fpdf
+
+vl-convert-python

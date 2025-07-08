@@ -98,13 +98,18 @@ def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
     return pivot
 
 
-def bar_chart(pivot: pd.DataFrame, title: str):
+def bar_chart(pivot: pd.DataFrame, title: str, save_path: str | None = None):
     chart = alt.Chart(pivot).mark_bar().encode(
         x=alt.X('Response:N', sort='-y'),
         y='Count:Q',
         tooltip=['Response', 'Count']
     ).properties(title=title, height=300)
     st.altair_chart(chart, use_container_width=True)
+    if save_path:
+        try:
+            chart.save(save_path)
+        except Exception as e:
+            st.warning(f"Could not save chart: {e}")
 
 
 def download_link(df: pd.DataFrame, filename: str, label: str, help: str | None = None):
@@ -177,23 +182,46 @@ def generate_report(df: pd.DataFrame) -> str:
         return ""
 
 
-def save_docx(text: str) -> BytesIO:
+def save_docx(text: str, pivots: dict | None = None, charts: dict | None = None) -> BytesIO:
     document = Document()
     document.add_paragraph(text)
+    if pivots:
+        from docx.shared import Inches
+        for name, pivot in pivots.items():
+            document.add_heading(name, level=2)
+            table = document.add_table(rows=len(pivot) + 1, cols=len(pivot.columns))
+            for j, col in enumerate(pivot.columns):
+                table.cell(0, j).text = str(col)
+            for i, (_, row) in enumerate(pivot.iterrows(), start=1):
+                for j, val in enumerate(row):
+                    table.cell(i, j).text = str(val)
+            if charts and name in charts and os.path.exists(charts[name]):
+                document.add_picture(charts[name], width=Inches(5))
     bio = BytesIO()
     document.save(bio)
     bio.seek(0)
     return bio
 
 
-def save_pdf(text: str) -> BytesIO:
-    """Save text as a simple PDF."""
+def save_pdf(text: str, pivots: dict | None = None, charts: dict | None = None) -> BytesIO:
+    """Save text and tables as a simple PDF."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(True, margin=15)
     pdf.set_font("Arial", size=12)
     for line in text.split("\n"):
         pdf.multi_cell(0, 10, line)
+    if pivots:
+        for name, pivot in pivots.items():
+            pdf.add_page()
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(0, 10, name, ln=True)
+            pdf.set_font("Arial", size=12)
+            pdf.cell(0, 10, " | ".join(pivot.columns), ln=True)
+            for _, row in pivot.iterrows():
+                pdf.cell(0, 10, " | ".join(str(x) for x in row), ln=True)
+            if charts and name in charts and os.path.exists(charts[name]):
+                pdf.image(charts[name], w=180)
     bio = BytesIO()
     pdf.output(bio)
     bio.seek(0)
@@ -312,17 +340,25 @@ if file and validate_file(file):
         df.to_pickle(cache_path)
 
         st.subheader("Structured Data Analysis")
+        pivots: dict[str, pd.DataFrame] = {}
+        charts: dict[str, str] = {}
         for col in structured_cols:
             pivot = generate_pivot(df, col)
             st.write(f"### {col}")
             st.dataframe(pivot)
-            bar_chart(pivot, f"{col} Responses")
+            chart_path = os.path.join(CACHE_DIR, f"{checksum}_{col}.png")
+            bar_chart(pivot, f"{col} Responses", save_path=chart_path)
+            pivots[col] = pivot
+            if os.path.exists(chart_path):
+                charts[col] = chart_path
             download_link(
                 pivot,
                 f"pivot_{col}.csv",
                 f"Download {col} Pivot",
                 help="Download the pivot table as a CSV file."
             )
+        st.session_state["pivot_tables"] = pivots
+        st.session_state["chart_paths"] = charts
 
         st.subheader("Categorized Comments")
         display_cols = [user_id_col, location_col, 'Concatenated', 'Translated', 'Language', 'Categories', 'Flagged']
@@ -349,8 +385,10 @@ if file and validate_file(file):
             report_text = generate_report(df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
             if report_text:
                 st.markdown(report_text)
-                docx_file = save_docx(report_text)
-                pdf_file = save_pdf(report_text)
+                pivots = st.session_state.get("pivot_tables", {})
+                charts = st.session_state.get("chart_paths", {})
+                docx_file = save_docx(report_text, pivots, charts)
+                pdf_file = save_pdf(report_text, pivots, charts)
                 st.download_button(
                     "Download DOCX",
                     docx_file,
