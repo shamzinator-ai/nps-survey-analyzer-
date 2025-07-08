@@ -3,6 +3,7 @@ import json
 from io import BytesIO
 from typing import List, Tuple
 import time
+import hashlib
 
 import altair as alt
 import openai
@@ -14,6 +15,10 @@ from fpdf import FPDF
 # Set your OpenAI API key via environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY", "")
 MODEL = "gpt-4o-mini"
+
+# Directory for cached processed data
+CACHE_DIR = "cache"
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 CATEGORIES = [
     "Search/Navigation", "Resource Mention", "User Question", "Translation Mention",
@@ -29,6 +34,7 @@ CATEGORIES = [
 
 # ----------------------------- Utility Functions -----------------------------
 
+@st.cache_data(show_spinner=False)
 def translate_text(text: str) -> Tuple[str, str]:
     """Detect language and translate text to English using GPT-4o-mini."""
     if not text or not text.strip():
@@ -51,6 +57,7 @@ def translate_text(text: str) -> Tuple[str, str]:
         return text, ""
 
 
+@st.cache_data(show_spinner=False)
 def categorize_text(text: str) -> List[str]:
     """Categorize text using GPT-4o-mini."""
     if not text:
@@ -224,19 +231,28 @@ file = st.sidebar.file_uploader(
 )
 
 if file and validate_file(file):
-    try:
-        if file.name.endswith(("xls", "xlsx")):
-            df = pd.read_excel(file)
-        else:
-            df = pd.read_csv(file)
-        if df.empty:
-            st.error("Uploaded file contains no data")
+    raw_bytes = file.getvalue()
+    checksum = hashlib.md5(raw_bytes).hexdigest()
+    cache_path = os.path.join(CACHE_DIR, f"{checksum}.pkl")
+    if "processed_df" in st.session_state:
+        df = st.session_state["processed_df"]
+    elif os.path.exists(cache_path):
+        df = pd.read_pickle(cache_path)
+        st.success("Loaded cached processed data")
+    else:
+        try:
+            if file.name.endswith(("xls", "xlsx")):
+                df = pd.read_excel(BytesIO(raw_bytes))
+            else:
+                df = pd.read_csv(BytesIO(raw_bytes))
+            if df.empty:
+                st.error("Uploaded file contains no data")
+                st.stop()
+            if df.isnull().all(axis=0).any():
+                st.warning("Some columns contain only missing values")
+        except Exception as e:
+            st.error(f"Failed to read file: {e}")
             st.stop()
-        if df.isnull().all(axis=0).any():
-            st.warning("Some columns contain only missing values")
-    except Exception as e:
-        st.error(f"Failed to read file: {e}")
-        st.stop()
 
     st.subheader("Data Preview")
     st.dataframe(df.head(10))
@@ -270,6 +286,8 @@ if file and validate_file(file):
         st.success("Processing complete")
 
         df = review_translations(df, user_id_col)
+        st.session_state["processed_df"] = df
+        df.to_pickle(cache_path)
 
         st.subheader("Structured Data Analysis")
         for col in structured_cols:
