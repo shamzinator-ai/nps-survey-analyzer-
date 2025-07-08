@@ -9,6 +9,7 @@ This repository contains a simple Streamlit application for analyzing NPS survey
 - Automatic translation of comments to English using GPT-4o-mini.
 - AI-driven categorization into a predefined list of categories.
 - Pivot tables with percentages and bar charts for structured questions.
+- High-level summary dashboard showing NPS distribution, category frequency and sentiment ratio.
 - Downloadable results and pivot tables.
 - Generate a narrative report and download it as a DOCX or PDF file.
 - Reports include pivot tables and bar chart images.

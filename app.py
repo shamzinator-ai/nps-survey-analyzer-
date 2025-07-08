@@ -219,21 +219,21 @@ def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
 
 def create_chart(pivot: pd.DataFrame, title: str):
     """Return an Altair chart object matching the on-screen chart."""
-    return (
+    color_range = ["#ff66b3", "#3399ff"]
+    chart = (
         alt.Chart(pivot, background="white")
         .mark_bar()
         .encode(
-            x=alt.X("Response:N", sort="-y"),
-            y="Count:Q",
-            color=alt.Color(
-                "Count:Q",
-                scale=alt.Scale(scheme="blues"),
-                legend=None,
-            ),
+            x=alt.X("Response:N", sort="-y", title="Response"),
+            y=alt.Y("Count:Q", title="Count"),
+            color=alt.Color("Count:Q", scale=alt.Scale(range=color_range), legend=None),
             tooltip=["Response", "Count"],
         )
-        .properties(title=title, height=300)
+        .properties(title=f"{title} 📊", height=300)
+        .configure_title(fontSize=18)
+        .configure_axis(labelFontSize=12, titleFontSize=14)
     )
+    return chart
 
 
 def chart_png(pivot: pd.DataFrame, title: str) -> BytesIO:
@@ -273,6 +273,43 @@ def bar_chart(pivot: pd.DataFrame, title: str) -> BytesIO:
         )
 
     return png_buffer
+
+
+def category_frequency(df: pd.DataFrame) -> pd.DataFrame:
+    """Return counts and percentages for all categories."""
+    cats = df["Categories"].str.split(",").explode().str.strip()
+    cats = cats[cats != ""]
+    pivot = cats.value_counts().reset_index()
+    pivot.columns = ["Category", "Count"]
+    total = pivot["Count"].sum()
+    pivot["Percent"] = (pivot["Count"] / total * 100).round(1)
+    total_row = pd.DataFrame({"Category": ["Total"], "Count": [total], "Percent": [100.0]})
+    return pd.concat([pivot, total_row], ignore_index=True)
+
+
+def sentiment_metrics(df: pd.DataFrame) -> tuple[int, int]:
+    """Return counts of positive and negative comments."""
+    pos = df["Categories"].str.contains("Positive Words", na=False).sum()
+    neg = df["Categories"].str.contains("Negative Words", na=False).sum()
+    return pos, neg
+
+
+def display_summary(df: pd.DataFrame, nps_col: str | None):
+    """Show high-level KPIs and charts."""
+    st.subheader("🚀 High-Level KPIs")
+    if nps_col and nps_col in df.columns:
+        nps_pivot = generate_pivot(df, nps_col)
+        st.write("### NPS Distribution")
+        st.dataframe(nps_pivot)
+        bar_chart(nps_pivot, "NPS Distribution")
+    cat_pivot = category_frequency(df)
+    st.write("### Category Frequency")
+    st.dataframe(cat_pivot)
+    bar_chart(cat_pivot, "Category Frequency")
+    pos, neg = sentiment_metrics(df)
+    st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
+    if not cat_pivot.empty:
+        st.write("Top 3 Issues:", ", ".join(cat_pivot.head(3)["Category"].tolist()))
 
 
 def download_link(df: pd.DataFrame, filename: str, label: str, help: str | None = None):
@@ -505,12 +542,18 @@ if file and validate_file(file):
             if file.name.endswith(("xls", "xlsx")):
                 df = pd.read_excel(BytesIO(raw_bytes))
             else:
-                df = pd.read_csv(BytesIO(raw_bytes))
+                try:
+                    df = pd.read_csv(BytesIO(raw_bytes), encoding="utf-8")
+                except UnicodeDecodeError:
+                    st.warning("File is not UTF-8 encoded, attempting latin-1 decoding")
+                    df = pd.read_csv(BytesIO(raw_bytes), encoding="latin-1")
             if df.empty:
                 st.error("Uploaded file contains no data")
                 st.stop()
             if df.isnull().all(axis=0).any():
                 st.warning("Some columns contain only missing values")
+            if df.isnull().all(axis=1).any():
+                st.warning("Some rows contain only missing values")
         except Exception as e:
             st.error(f"Failed to read file: {e}")
             st.stop()
@@ -579,6 +622,9 @@ if file and validate_file(file):
         df = review_translations(df, user_id_col)
         st.session_state["processed_df"] = df
         df.to_pickle(cache_path)
+
+        nps_col = next((c for c in structured_cols if "nps" in c.lower()), None)
+        display_summary(df, nps_col)
 
         st.subheader("Structured Data Analysis")
         for col in structured_cols:
@@ -650,6 +696,9 @@ if file and validate_file(file):
                     pivot_dict = {
                         col: generate_pivot(seg_df, col) for col in structured_cols
                     }
+                    pivot_dict["Category Frequency"] = category_frequency(seg_df)
+                    if nps_col and nps_col in seg_df.columns:
+                        pivot_dict["NPS Distribution"] = generate_pivot(seg_df, nps_col)
                     docx_file = save_docx(report_text, pivot_dict)
                     pdf_file = save_pdf(report_text, pivot_dict)
                     if len(selected_segments) <= 1:
