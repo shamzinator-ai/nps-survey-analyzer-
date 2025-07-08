@@ -476,6 +476,19 @@ if file and validate_file(file):
         "Process Data",
         help="Translate comments, categorise them and generate summaries."
     ):
+        errors = []
+        if not user_id_col:
+            errors.append("Please select a user ID column.")
+        if not location_col:
+            errors.append("Please select a location column.")
+        if not free_text_cols:
+            errors.append("Select at least one free-text column.")
+        if not structured_cols:
+            errors.append("Select at least one structured column.")
+        if errors:
+            for msg in errors:
+                st.error(msg)
+            st.stop()
         with st.spinner("Processing free-text responses..."):
             df = process_free_text(df, free_text_cols)
 
