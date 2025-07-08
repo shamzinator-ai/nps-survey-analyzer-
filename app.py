@@ -1,6 +1,7 @@
 import os
 import json
 from io import BytesIO
+from tempfile import NamedTemporaryFile
 from typing import List, Tuple
 import time
 import asyncio
@@ -11,6 +12,7 @@ import openai
 import pandas as pd
 import streamlit as st
 from docx import Document
+from docx.shared import Inches
 from fpdf import FPDF
 
 # Set your OpenAI API key via environment variable
@@ -205,13 +207,24 @@ def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
     return pivot
 
 
-def bar_chart(pivot: pd.DataFrame, title: str):
-    chart = alt.Chart(pivot).mark_bar().encode(
-        x=alt.X('Response:N', sort='-y'),
-        y='Count:Q',
-        tooltip=['Response', 'Count']
-    ).properties(title=title, height=300)
+def bar_chart(pivot: pd.DataFrame, title: str) -> BytesIO:
+    """Display a bar chart and return the image bytes."""
+    chart = (
+        alt.Chart(pivot)
+        .mark_bar()
+        .encode(
+            x=alt.X("Response:N", sort="-y"),
+            y="Count:Q",
+            tooltip=["Response", "Count"],
+        )
+        .properties(title=title, height=300)
+    )
     st.altair_chart(chart, use_container_width=True)
+
+    img = BytesIO()
+    chart.save(img, format="png")
+    img.seek(0)
+    return img
 
 
 def download_link(df: pd.DataFrame, filename: str, label: str, help: str | None = None):
@@ -298,25 +311,53 @@ def generate_report(df: pd.DataFrame) -> str:
         return ""
 
 
-def save_docx(text: str) -> BytesIO:
+def save_docx(text: str, pivots: List[Tuple[str, pd.DataFrame, BytesIO]]) -> BytesIO:
+    """Save text and pivot tables with charts to a DOCX file."""
     document = Document()
-    document.add_paragraph(text)
+
+    for para in text.split("\n"):
+        document.add_paragraph(para)
+
+    for title, pivot, chart in pivots:
+        document.add_heading(title, level=2)
+        table = document.add_table(rows=pivot.shape[0] + 1, cols=pivot.shape[1])
+        for j, col in enumerate(pivot.columns):
+            table.cell(0, j).text = str(col)
+        for i, row in pivot.iterrows():
+            for j, val in enumerate(row):
+                table.cell(i + 1, j).text = str(val)
+        chart.seek(0)
+        document.add_picture(chart, width=Inches(5))
+
     bio = BytesIO()
     document.save(bio)
     bio.seek(0)
     return bio
 
 
-def save_pdf(text: str) -> BytesIO:
-    """Save text as a simple PDF."""
+def save_pdf(text: str, pivots: List[Tuple[str, pd.DataFrame, BytesIO]]) -> BytesIO:
+    """Save text and pivot tables with charts to a PDF file."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(True, margin=15)
     pdf.set_font("Arial", size=12)
     for line in text.split("\n"):
         pdf.multi_cell(0, 10, line)
-    bio = BytesIO()
-    pdf.output(bio)
+
+    for title, pivot, chart in pivots:
+        pdf.ln(5)
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(0, 10, title, ln=True)
+        pdf.set_font("Arial", size=12)
+        pdf.multi_cell(0, 10, pivot.to_string(index=False))
+        with NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(chart.getvalue())
+            tmp.flush()
+            epw = pdf.w - 2 * pdf.l_margin
+            pdf.image(tmp.name, w=epw)
+        os.unlink(tmp.name)
+
+    bio = BytesIO(pdf.output(dest="S").encode("latin-1"))
     bio.seek(0)
     return bio
 
@@ -453,11 +494,13 @@ if file and validate_file(file):
         df.to_pickle(cache_path)
 
         st.subheader("Structured Data Analysis")
+        pivot_results: List[Tuple[str, pd.DataFrame, BytesIO]] = []
         for col in structured_cols:
             pivot = generate_pivot(df, col)
             st.write(f"### {col}")
             st.dataframe(pivot)
-            bar_chart(pivot, f"{col} Responses")
+            chart_img = bar_chart(pivot, f"{col} Responses")
+            pivot_results.append((col, pivot, chart_img))
             c1, c2 = st.columns(2)
             with c1:
                 download_link(
@@ -473,6 +516,8 @@ if file and validate_file(file):
                     f"Download {col} Excel",
                     help="Download the pivot table as an Excel file."
                 )
+
+        st.session_state["pivot_results"] = pivot_results
 
         st.subheader("Categorized Comments")
         display_cols = [user_id_col, location_col, 'Concatenated', 'Translated', 'Language', 'Categories', 'Flagged']
@@ -496,11 +541,13 @@ if file and validate_file(file):
             "Generate Report",
             help="Create a narrative summary of all findings."
         ):
-            report_text = generate_report(df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
+            report_text = generate_report(
+                df[[user_id_col, location_col, "Translated", "Categories", "Flagged"]]
+            )
             if report_text:
                 st.markdown(report_text)
-                docx_file = save_docx(report_text)
-                pdf_file = save_pdf(report_text)
+                docx_file = save_docx(report_text, pivot_results)
+                pdf_file = save_pdf(report_text, pivot_results)
                 st.download_button(
                     "Download DOCX",
                     docx_file,
