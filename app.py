@@ -112,6 +112,20 @@ def download_link(df: pd.DataFrame, filename: str, label: str, help: str | None 
     st.download_button(label, csv, file_name=filename, mime='text/csv', help=help)
 
 
+def export_excel(df: pd.DataFrame, filename: str, label: str, help: str | None = None):
+    """Download a DataFrame as an Excel file."""
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False)
+    st.download_button(
+        label,
+        buffer.getvalue(),
+        file_name=filename,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help=help,
+    )
+
+
 def validate_file(uploaded_file) -> bool:
     """Basic checks for uploaded file size and type."""
     max_size = 10 * 1024 * 1024  # 10MB
@@ -317,12 +331,21 @@ if file and validate_file(file):
             st.write(f"### {col}")
             st.dataframe(pivot)
             bar_chart(pivot, f"{col} Responses")
-            download_link(
-                pivot,
-                f"pivot_{col}.csv",
-                f"Download {col} Pivot",
-                help="Download the pivot table as a CSV file."
-            )
+            c1, c2 = st.columns(2)
+            with c1:
+                download_link(
+                    pivot,
+                    f"pivot_{col}.csv",
+                    f"Download {col} CSV",
+                    help="Download the pivot table as a CSV file."
+                )
+            with c2:
+                export_excel(
+                    pivot,
+                    f"pivot_{col}.xlsx",
+                    f"Download {col} Excel",
+                    help="Download the pivot table as an Excel file."
+                )
 
         st.subheader("Categorized Comments")
         display_cols = [user_id_col, location_col, 'Concatenated', 'Translated', 'Language', 'Categories', 'Flagged']
