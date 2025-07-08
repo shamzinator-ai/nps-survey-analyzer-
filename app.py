@@ -15,17 +15,50 @@ from fpdf import FPDF
 openai.api_key = os.getenv("OPENAI_API_KEY", "")
 MODEL = "gpt-4o-mini"
 
-CATEGORIES = [
-    "Search/Navigation", "Resource Mention", "User Question", "Translation Mention",
-    "User Suggestion", "Pain Point", "AI", "Competitor", "Site Error", "Social Media",
-    "Phonics", "Price Mention", "Accidental Purchase", "Resource Preview",
-    "Resource Request", "Editing/Adapting Resource", "Resource Quality", "EDI", "SEND",
-    "Partnership", "Parental Leave", "Email", "Email Verification", "Not Used Enough",
-    "Legal", "Glassdoor", "GDPR", "Free Resources", "Download Issues", "Content Errors",
-    "Account Access", "Already Cancelled", "Auto-renewal", "Book Club",
-    "Cancellation Difficulty", "CS General", "CS Negative", "CS Positive",
-    "Negative Words", "Positive Words"
-]
+CATEGORY_DESCRIPTIONS = {
+    "Search/Navigation": "Users struggling to find content or navigate the site.",
+    "Resource Mention": "Reference to a specific resource or file.",
+    "User Question": "Direct question asked by a user.",
+    "Translation Mention": "Feedback about translation quality or need.",
+    "User Suggestion": "Suggested improvement or feature request.",
+    "Pain Point": "Describes frustration or difficulty.",
+    "AI": "Comments about AI features or behaviour.",
+    "Competitor": "Mentions of competitor products.",
+    "Site Error": "Reports of bugs or site issues.",
+    "Social Media": "Reference to social media posts or activity.",
+    "Phonics": "Feedback on phonics related content.",
+    "Price Mention": "Notes or complaints about pricing.",
+    "Accidental Purchase": "Unintended order or payment made.",
+    "Resource Preview": "Issues or requests around previewing resources.",
+    "Resource Request": "Request for new resources or content.",
+    "Editing/Adapting Resource": "Desire to edit or adapt resources.",
+    "Resource Quality": "Comments on the quality of a resource.",
+    "EDI": "Equity, diversity and inclusion related feedback.",
+    "SEND": "Special educational needs and disabilities.",
+    "Partnership": "Discussion of partnerships or collaborations.",
+    "Parental Leave": "Mention of parental leave policies or resources.",
+    "Email": "General issues with email communications.",
+    "Email Verification": "Problems verifying an email address.",
+    "Not Used Enough": "User says product isn't used much.",
+    "Legal": "Legal concerns or questions raised.",
+    "Glassdoor": "References to Glassdoor reviews.",
+    "GDPR": "Questions about GDPR compliance.",
+    "Free Resources": "Looking for or discussing free resources.",
+    "Download Issues": "Trouble downloading files.",
+    "Content Errors": "Errors found within content.",
+    "Account Access": "Unable to access account.",
+    "Already Cancelled": "User claims they already cancelled.",
+    "Auto-renewal": "Problems with auto-renewal charges.",
+    "Book Club": "Mentions book club resources.",
+    "Cancellation Difficulty": "Difficulty cancelling a subscription.",
+    "CS General": "General interaction with customer support.",
+    "CS Negative": "Negative customer support experience.",
+    "CS Positive": "Positive customer support experience.",
+    "Negative Words": "Generally negative sentiment words.",
+    "Positive Words": "Generally positive sentiment words."
+}
+
+CATEGORIES = list(CATEGORY_DESCRIPTIONS.keys())
 
 # ----------------------------- Utility Functions -----------------------------
 
@@ -218,6 +251,9 @@ st.set_page_config(page_title="NPS Survey Analyzer", layout="wide")
 st.title("NPS Survey Analyzer")
 
 st.sidebar.header("1. Upload Survey Data")
+with st.sidebar.expander("Category Descriptions"):
+    for cat, desc in CATEGORY_DESCRIPTIONS.items():
+        st.markdown(f"**{cat}** - {desc}")
 file = st.sidebar.file_uploader(
     "Upload CSV, XLS or XLSX", type=["csv", "xls", "xlsx"],
     help="File must include a unique ID, location, at least one structured and one free-text column."
