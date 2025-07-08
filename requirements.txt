@@ -4,3 +4,4 @@ openai
 altair
 python-docx
 fpdf
+openpyxl
