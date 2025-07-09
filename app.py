@@ -294,19 +294,28 @@ def sentiment_metrics(df: pd.DataFrame) -> tuple[int, int]:
     return pos, neg
 
 
+def compute_kpis(df: pd.DataFrame, nps_col: str | None) -> tuple[pd.DataFrame, pd.DataFrame, tuple[int, int]]:
+    """Calculate NPS distribution, category frequency and sentiment metrics."""
+    nps_pivot = pd.DataFrame()
+    if nps_col and nps_col in df.columns:
+        nps_pivot = generate_pivot(df, nps_col)
+    cat_pivot = category_frequency(df)
+    sentiment = sentiment_metrics(df)
+    return nps_pivot, cat_pivot, sentiment
+
+
 def display_summary(df: pd.DataFrame, nps_col: str | None):
     """Show high-level KPIs and charts."""
     st.subheader("🚀 High-Level KPIs")
-    if nps_col and nps_col in df.columns:
-        nps_pivot = generate_pivot(df, nps_col)
+    nps_pivot, cat_pivot, (pos, neg) = compute_kpis(df, nps_col)
+    if not nps_pivot.empty:
         st.write("### NPS Distribution")
         st.dataframe(nps_pivot)
         bar_chart(nps_pivot, "NPS Distribution")
-    cat_pivot = category_frequency(df)
     st.write("### Category Frequency")
     st.dataframe(cat_pivot)
     bar_chart(cat_pivot, "Category Frequency")
-    pos, neg = sentiment_metrics(df)
+    
     st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
     if not cat_pivot.empty:
         st.write("Top 3 Issues:", ", ".join(cat_pivot.head(3)["Category"].tolist()))
@@ -687,18 +696,26 @@ if file and validate_file(file):
                     seg_df = df if segment is None else df[df[location_col] == segment]
                     if seg_df.empty:
                         continue
+                    segment_title = segment if segment is not None else "All"
+
+                    st.markdown(f"## KPIs for {segment_title}")
+                    nps_pivot, cat_pivot, (pos, neg) = compute_kpis(seg_df, nps_col)
+                    if not nps_pivot.empty:
+                        st.dataframe(nps_pivot)
+                        bar_chart(nps_pivot, f"{segment_title} NPS Distribution")
+                    st.dataframe(cat_pivot)
+                    bar_chart(cat_pivot, f"{segment_title} Category Frequency")
+                    st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
+
                     report_text = generate_report(seg_df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
                     if not report_text:
                         continue
-                    segment_title = segment if segment is not None else "All"
                     st.markdown(f"## Report for {segment_title}")
                     st.markdown(report_text)
-                    pivot_dict = {
-                        col: generate_pivot(seg_df, col) for col in structured_cols
-                    }
-                    pivot_dict["Category Frequency"] = category_frequency(seg_df)
-                    if nps_col and nps_col in seg_df.columns:
-                        pivot_dict["NPS Distribution"] = generate_pivot(seg_df, nps_col)
+                    pivot_dict = {col: generate_pivot(seg_df, col) for col in structured_cols}
+                    pivot_dict["Category Frequency"] = cat_pivot
+                    if not nps_pivot.empty:
+                        pivot_dict["NPS Distribution"] = nps_pivot
                     docx_file = save_docx(report_text, pivot_dict)
                     pdf_file = save_pdf(report_text, pivot_dict)
                     if len(selected_segments) <= 1:
