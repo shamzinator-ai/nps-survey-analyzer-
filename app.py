@@ -422,7 +422,9 @@ def rating_pivot(
         lambda c: re.sub(r"^\d+[\.:]\s*", "", str(c)).split(":")[-1].strip()
     )
     pivot = df_long.value_counts(["Aspect", "Rating"]).reset_index(name="Count")
-    pivot["Percent"] = pivot.groupby("Aspect")["Count"].apply(lambda x: (x / x.sum() * 100).round(1))
+    pivot["Percent"] = pivot.groupby("Aspect")["Count"].transform(
+        lambda x: (x / x.sum() * 100).round(1)
+    )
     pivot["Rating"] = pd.Categorical(pivot["Rating"], categories=order, ordered=True)
     return pivot.sort_values(["Aspect", "Rating"]).reset_index(drop=True)
 
