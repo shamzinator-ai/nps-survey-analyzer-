@@ -67,6 +67,7 @@ CATEGORIES = [
 # Default column names for common Twinkl survey exports
 DEFAULT_USER_ID_COLUMN = "25.0: User ID"
 DEFAULT_LOCATION_COLUMN = "country"
+DEFAULT_NPS_COLUMN = "1: How likely are you to recommend Twinkl to a friend or colleague?"
 DEFAULT_FREE_TEXT_COLUMNS = [
     "2: Thanks. We’d love to know more about why you’d recommend Twinkl.",
     "3: Thanks. Please tell us more about your score.",
@@ -591,20 +592,39 @@ def sentiment_metrics(df: pd.DataFrame) -> tuple[int, int]:
     return pos, neg
 
 
-def compute_kpis(df: pd.DataFrame, nps_col: str | None) -> tuple[pd.DataFrame, pd.DataFrame, tuple[int, int]]:
-    """Calculate NPS distribution, category frequency and sentiment metrics."""
+def compute_nps_score(df: pd.DataFrame, column: str) -> int | None:
+    """Return the Net Promoter Score for a numeric 0-10 column."""
+    if column not in df.columns:
+        return None
+    values = pd.to_numeric(df[column], errors="coerce").dropna()
+    if values.empty:
+        return None
+    promoters = (values >= 9).sum()
+    detractors = (values <= 6).sum()
+    total = len(values)
+    return int(round((promoters - detractors) / total * 100))
+
+
+def compute_kpis(
+    df: pd.DataFrame, nps_col: str | None
+) -> tuple[pd.DataFrame, pd.DataFrame, tuple[int, int], int | None]:
+    """Calculate NPS metrics, category frequency and sentiment metrics."""
     nps_pivot = pd.DataFrame()
+    nps_score = None
     if nps_col and nps_col in df.columns:
         nps_pivot = generate_pivot(df, nps_col)
+        nps_score = compute_nps_score(df, nps_col)
     cat_pivot = category_frequency(df)
     sentiment = sentiment_metrics(df)
-    return nps_pivot, cat_pivot, sentiment
+    return nps_pivot, cat_pivot, sentiment, nps_score
 
 
 def display_summary(df: pd.DataFrame, nps_col: str | None):
     """Show high-level KPIs and charts."""
     st.subheader("🚀 High-Level KPIs")
-    nps_pivot, cat_pivot, (pos, neg) = compute_kpis(df, nps_col)
+    nps_pivot, cat_pivot, (pos, neg), nps_score = compute_kpis(df, nps_col)
+    if nps_score is not None:
+        st.metric("NPS Score", nps_score)
     if not nps_pivot.empty:
         st.write("### NPS Distribution")
         st.dataframe(nps_pivot)
@@ -612,7 +632,7 @@ def display_summary(df: pd.DataFrame, nps_col: str | None):
     st.write("### Category Frequency")
     st.dataframe(cat_pivot)
     bar_chart(cat_pivot, "Category Frequency")
-    
+
     st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
     if not cat_pivot.empty:
         st.write("Top 3 Issues:", ", ".join(cat_pivot.head(3)["Category"].tolist()))
@@ -1138,7 +1158,15 @@ if file and validate_file(file):
         if os.path.exists(partial_path):
             os.remove(partial_path)
 
-        nps_col = next((c for c in structured_cols if "nps" in c.lower()), None)
+        nps_col = next(
+            (
+                c
+                for c in structured_cols
+                if "nps" in c.lower()
+                or "how likely are you to recommend" in str(c).lower()
+            ),
+            None,
+        )
 
         analysis_df = df
         if selected_segments:
@@ -1395,7 +1423,9 @@ if file and validate_file(file):
                     segment_title = segment if segment is not None else "All"
 
                     st.markdown(f"## KPIs for {segment_title}")
-                    nps_pivot, cat_pivot, (pos, neg) = compute_kpis(seg_df, nps_col)
+                    nps_pivot, cat_pivot, (pos, neg), nps_score = compute_kpis(seg_df, nps_col)
+                    if nps_score is not None:
+                        st.metric("NPS Score", nps_score)
                     if not nps_pivot.empty:
                         st.dataframe(nps_pivot)
                         bar_chart(nps_pivot, f"{segment_title} NPS Distribution")
