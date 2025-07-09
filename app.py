@@ -413,10 +413,16 @@ def safe_name(name: str) -> str:
 
 
 def category_frequency(df: pd.DataFrame) -> pd.DataFrame:
-    """Return counts and percentages for all categories."""
-    cats = df["Categories"].str.split(",").explode().str.strip()
-    cats = cats[cats != ""]
-    pivot = cats.value_counts().reset_index()
+    """Return counts and percentages for all categories including blanks."""
+
+    cat_lists: list[str] = []
+    for cats in df["Categories"].fillna(""):
+        parts = [c.strip() for c in str(cats).split(",") if c.strip()]
+        if not parts:
+            parts = ["Uncategorized"]
+        cat_lists.extend(parts)
+
+    pivot = pd.Series(cat_lists).value_counts().reset_index()
     pivot.columns = ["Category", "Count"]
     total = pivot["Count"].sum()
     pivot["Percent"] = (pivot["Count"] / total * 100).round(1)
@@ -538,7 +544,6 @@ def validate_columns(user_id_col: str, location_col: str,
 
 def review_translations(df: pd.DataFrame, id_col: str) -> pd.DataFrame:
     """Allow user to edit translations and categories."""
-    st.subheader("Review Translations and Categories")
     show_reasoning = st.checkbox(
         "Show category reasoning",
         value=False,
