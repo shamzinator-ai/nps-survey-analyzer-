@@ -162,7 +162,11 @@ MULTISELECT_QUESTION_TEXTS = {
         "We\u2019d love to hear more about what matters to you. "
         "Please select which areas you wish to give feedback on. "
         "Your time is valuable so we'll only ask questions about these topics."
-    )
+    ),
+    "11": (
+        "Have you ever created your own content on the website? "
+        "(Choose all that apply)"
+    ),
 }
 
 # ----------------------------- Utility Functions -----------------------------
@@ -354,12 +358,14 @@ def multiselect_pivot(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
     rows = []
     for col in columns:
         label = re.sub(r"^\d+[\.:]\s*", "", col).strip()
-        count = df[col].fillna(0).astype(float).sum()
+        values = df[col].fillna("")
+        yes_vals = {"1", "true", "yes", "checked"}
+        count = sum(str(v).strip().lower() in yes_vals for v in values)
         rows.append({"Response": label, "Count": int(count)})
     pivot = pd.DataFrame(rows)
     total = pivot["Count"].sum()
-    pivot["Percent"] = (pivot["Count"] / total * 100).round(1)
-    total_row = pd.DataFrame({"Response": ["Total"], "Count": [total], "Percent": [100.0]})
+    pivot["Percent"] = (pivot["Count"] / total * 100).round(1) if total else 0
+    total_row = pd.DataFrame({"Response": ["Total"], "Count": [total], "Percent": [100.0 if total else 0.0]})
     return pd.concat([pivot, total_row], ignore_index=True)
 
 
@@ -1107,7 +1113,14 @@ if file and validate_file(file):
             for k, v in groups.items()
             if len(v) > 1
             and all(
-                set(str(x).strip() for x in analysis_df[c].dropna().unique()) <= {"0", "1"}
+                len(
+                    {
+                        str(x).strip().lower()
+                        for x in analysis_df[c].dropna().unique()
+                        if str(x).strip() != ""
+                    }
+                )
+                <= 2
                 for c in v
             )
         }
