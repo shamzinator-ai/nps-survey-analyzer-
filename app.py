@@ -408,7 +408,9 @@ def rating_pivot(
     if order is None:
         order = RATING_ORDER_EASE
     df_long = df[columns].melt(value_name="Rating", var_name="Aspect").dropna()
-    df_long["Aspect"] = df_long["Aspect"].apply(lambda c: re.sub(r"^\d+[\.:]\s*", "", str(c)).strip())
+    df_long["Aspect"] = df_long["Aspect"].apply(
+        lambda c: re.sub(r"^\d+[\.:]\s*", "", str(c)).split(":")[-1].strip()
+    )
     pivot = df_long.value_counts(["Aspect", "Rating"]).reset_index(name="Count")
     pivot["Percent"] = pivot.groupby("Aspect")["Count"].apply(lambda x: (x / x.sum() * 100).round(1))
     pivot["Rating"] = pd.Categorical(pivot["Rating"], categories=order, ordered=True)
@@ -1168,32 +1170,36 @@ if file and validate_file(file):
 
         processed: set[str] = set()
 
-        rating_cols = [c for c in structured_cols if str(c).startswith("6.")]
-        if rating_cols:
-            pivot = rating_pivot(analysis_df, rating_cols, order=RATING_ORDER_EASE)
-            st.write("### Of the following areas, please rate how easy they are to use")
+        ease_cols = [
+            c
+            for c in structured_cols
+            if re.match(r"^(6|14)[\.:]", str(c))
+        ]
+        if ease_cols:
+            pivot = rating_pivot(analysis_df, ease_cols, order=RATING_ORDER_EASE)
+            st.write("### Of the following areas, please rate how easy they were to use")
             st.dataframe(pivot)
             chart_buf = stacked_bar_chart(pivot, "Ease of Use by Area", order=RATING_ORDER_EASE)
             c1, c2 = st.columns(2)
             with c1:
                 download_link(
                     pivot,
-                    "pivot_q6.csv",
-                    "Download Question 6 CSV",
+                    "pivot_ease.csv",
+                    "Download Ease Question CSV",
                     help="Download the pivot table as a CSV file.",
                 )
             with c2:
                 export_excel(
                     pivot,
-                    "pivot_q6.xlsx",
-                    "Download Question 6 Excel",
+                    "pivot_ease.xlsx",
+                    "Download Ease Question Excel",
                     help="Download the pivot table as an Excel file."
                 )
             csv_bytes = pivot.to_csv(index=False).encode("utf-8")
-            safe = safe_name("question_6")
+            safe = safe_name("question_ease")
             zip_entries.append((f"{safe}/table.csv", csv_bytes))
             zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-            processed.update(rating_cols)
+            processed.update(ease_cols)
 
         content_rating_cols = [c for c in structured_cols if str(c).startswith("8.")]
         if content_rating_cols:
