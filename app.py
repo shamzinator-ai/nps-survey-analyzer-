@@ -156,6 +156,17 @@ CATEGORY_DESCRIPTIONS = {
     "Positive Words": "Use of positive language or sentiment",
 }
 
+# Column group for overall content ratings question
+CONTENT_RATING_COLUMNS = [
+    "8.1: Please rate the following:: The choice of content",
+    "8.2: Please rate the following:: The quality of content",
+    "8.3: Please rate the following:: The design of content",
+    "8.4: Please rate the following:: The diversity of content",
+    "8.5: Please rate the following:: The quality of our inclusive content (e.g. SEND)",
+    "8.6: Please rate the following:: The content is suitable for my requirements (curriculum, country, language, the age of your children, etc...)",
+]
+CONTENT_RATING_QUESTION = "Please rate the following about our content"
+
 # ----------------------------- Utility Functions -----------------------------
 
 def detect_language_offline(text: str) -> str:
@@ -338,6 +349,17 @@ def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
     total_row = pd.DataFrame({"Response": ["Total"], "Count": [total], "Percent": [100.0]})
     pivot = pd.concat([pivot, total_row], ignore_index=True)
     return pivot
+
+
+def generate_group_pivot(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """Combine multiple columns and return a pivot of response counts."""
+    melted = df[columns].melt(value_name="Response")
+    pivot = melted["Response"].value_counts(dropna=False).reset_index()
+    pivot.columns = ["Response", "Count"]
+    total = pivot["Count"].sum()
+    pivot["Percent"] = (pivot["Count"] / total * 100).round(1)
+    total_row = pd.DataFrame({"Response": ["Total"], "Count": [total], "Percent": [100.0]})
+    return pd.concat([pivot, total_row], ignore_index=True)
 
 
 def create_chart(pivot: pd.DataFrame, title: str):
@@ -999,7 +1021,38 @@ if file and validate_file(file):
 
         st.subheader("Structured Data Analysis")
         zip_entries: list[tuple[str, bytes]] = []
-        for col in structured_cols:
+        cols_to_process = structured_cols.copy()
+
+        content_cols_present = [c for c in CONTENT_RATING_COLUMNS if c in cols_to_process and c in analysis_df.columns]
+        if content_cols_present:
+            pivot = generate_group_pivot(analysis_df, content_cols_present)
+            st.write(f"### {CONTENT_RATING_QUESTION}")
+            st.dataframe(pivot)
+            chart_buf = bar_chart(pivot, f"{CONTENT_RATING_QUESTION} Responses")
+            c1, c2 = st.columns(2)
+            safe_label = safe_name(CONTENT_RATING_QUESTION)
+            with c1:
+                download_link(
+                    pivot,
+                    f"pivot_{safe_label}.csv",
+                    f"Download {CONTENT_RATING_QUESTION} CSV",
+                    help="Download the pivot table as a CSV file."
+                )
+            with c2:
+                export_excel(
+                    pivot,
+                    f"pivot_{safe_label}.xlsx",
+                    f"Download {CONTENT_RATING_QUESTION} Excel",
+                    help="Download the pivot table as an Excel file."
+                )
+            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+            zip_entries.append((f"{safe_label}/table.csv", csv_bytes))
+            zip_entries.append((f"{safe_label}/chart.png", chart_buf.getvalue()))
+            cols_to_process = [c for c in cols_to_process if c not in content_cols_present]
+
+        for col in cols_to_process:
+            if col not in analysis_df.columns:
+                continue
             pivot = generate_pivot(analysis_df, col)
             st.write(f"### {col}")
             st.dataframe(pivot)
@@ -1010,7 +1063,7 @@ if file and validate_file(file):
                     pivot,
                     f"pivot_{col}.csv",
                     f"Download {col} CSV",
-                    help="Download the pivot table as a CSV file.",
+                    help="Download the pivot table as a CSV file."
                 )
             with c2:
                 export_excel(
@@ -1088,7 +1141,13 @@ if file and validate_file(file):
                         continue
                     st.markdown(f"## Report for {segment_title}")
                     st.markdown(report_text)
-                    pivot_dict = {col: generate_pivot(seg_df, col) for col in structured_cols}
+                    pivot_dict = {}
+                    group_present = [c for c in CONTENT_RATING_COLUMNS if c in structured_cols and c in seg_df.columns]
+                    if group_present:
+                        pivot_dict[CONTENT_RATING_QUESTION] = generate_group_pivot(seg_df, group_present)
+                    for col in structured_cols:
+                        if col in seg_df.columns and col not in group_present:
+                            pivot_dict[col] = generate_pivot(seg_df, col)
                     pivot_dict["Category Frequency"] = cat_pivot
                     if not nps_pivot.empty:
                         pivot_dict["NPS Distribution"] = nps_pivot
