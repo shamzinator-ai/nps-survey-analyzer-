@@ -1391,6 +1391,7 @@ if file and validate_file(file):
         if analysis_mode != "Free Text Only":
             st.subheader("Structured Data Analysis")
             zip_entries: list[tuple[str, bytes]] = []
+            pdf_pivots: dict[str, pd.DataFrame] = {}
 
             # Identify multi-select question groups by numeric prefix
             pattern = re.compile(r"^(\d+)[\.:]")
@@ -1423,7 +1424,8 @@ if file and validate_file(file):
             ease_cols = [c for c in structured_cols if re.match(r"^(6|14)[\.:]", str(c))]
             if ease_cols:
                 pivot = rating_pivot(analysis_df, ease_cols, order=RATING_ORDER_EASE)
-                st.write("### Of the following areas, please rate how easy they were to use")
+                question_text = "Of the following areas, please rate how easy they were to use"
+                st.write(f"### {question_text}")
                 st.dataframe(pivot)
                 chart_buf = stacked_bar_chart(pivot, "Ease of Use by Area", order=RATING_ORDER_EASE)
                 c1, c2 = st.columns(2)
@@ -1445,12 +1447,14 @@ if file and validate_file(file):
                 safe = safe_name("question_ease")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                pdf_pivots[question_text] = pivot
                 processed.update(ease_cols)
 
             content_rating_cols = [c for c in structured_cols if str(c).startswith("8.")]
             if content_rating_cols:
                 pivot = rating_pivot(analysis_df, content_rating_cols, order=CONTENT_RATING_ORDER)
-                st.write("### Please rate the following about our content")
+                question_text = "Please rate the following about our content"
+                st.write(f"### {question_text}")
                 st.dataframe(pivot)
                 chart_buf = stacked_bar_chart(pivot, "Content Ratings", order=CONTENT_RATING_ORDER)
                 c1, c2 = st.columns(2)
@@ -1472,6 +1476,7 @@ if file and validate_file(file):
                 safe = safe_name("question_8")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                pdf_pivots[question_text] = pivot
                 processed.update(content_rating_cols)
 
             satisfaction_cols = [c for c in structured_cols if str(c).startswith("12.")]
@@ -1479,7 +1484,8 @@ if file and validate_file(file):
                 pivot = combined_rating_pivot(
                     analysis_df, satisfaction_cols, order=SATISFACTION_ORDER
                 )
-                st.write("### How satisfied were you with the materials you created?")
+                question_text = "How satisfied were you with the materials you created?"
+                st.write(f"### {question_text}")
                 st.dataframe(pivot)
                 chart_buf = bar_chart(
                     pivot, "Satisfaction with Created Materials", order=SATISFACTION_ORDER
@@ -1503,6 +1509,7 @@ if file and validate_file(file):
                 safe = safe_name("question_12")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                pdf_pivots[question_text] = pivot
                 processed.update(satisfaction_cols)
 
             importance_cols = [c for c in structured_cols if re.match(r"^21[\.:]", str(c))]
@@ -1520,7 +1527,8 @@ if file and validate_file(file):
                 else:
                     imp_order = IMPORTANCE_ORDER
                 pivot = rating_pivot(analysis_df, importance_cols, order=imp_order)
-                st.write("### Tell us how important the following are to you")
+                question_text = "Tell us how important the following are to you"
+                st.write(f"### {question_text}")
                 st.dataframe(pivot)
                 chart_buf = stacked_bar_chart(pivot, "Importance Ratings", order=imp_order)
                 c1, c2 = st.columns(2)
@@ -1542,6 +1550,7 @@ if file and validate_file(file):
                 safe = safe_name("question_21")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                pdf_pivots[question_text] = pivot
 
             for prefix, cols in groups.items():
                 question = MULTISELECT_QUESTION_TEXTS.get(prefix, f"Question {prefix}")
@@ -1568,13 +1577,15 @@ if file and validate_file(file):
                 safe = safe_name(f"question_{prefix}")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                pdf_pivots[question] = pivot
                 processed.update(cols)
 
             for col in structured_cols:
                 if col in processed:
                     continue
                 pivot = generate_pivot(analysis_df, col)
-                st.write(f"### {col}")
+                question_text = str(col)
+                st.write(f"### {question_text}")
                 st.dataframe(pivot)
                 chart_buf = bar_chart(pivot, f"{col} Responses")
                 c1, c2 = st.columns(2)
@@ -1596,6 +1607,7 @@ if file and validate_file(file):
                 safe = safe_name(col)
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                pdf_pivots[question_text] = pivot
 
             if zip_entries:
                 zip_buf = BytesIO()
@@ -1609,6 +1621,15 @@ if file and validate_file(file):
                     "all_pivots.zip",
                     help="Download every pivot table CSV and chart PNG at once.",
                     key=unique_key("all_pivots_zip"),
+                )
+            if pdf_pivots:
+                pdf_buf = save_pdf("NPS Survey Charts and Tables", pdf_pivots)
+                st.download_button(
+                    "Download Charts PDF",
+                    pdf_buf,
+                    "all_charts_tables.pdf",
+                    help="Download all pivot tables and charts as a single PDF.",
+                    key=unique_key("all_pivots_pdf"),
                 )
 
         if analysis_mode != "Structured Data Only" and show_comments:
