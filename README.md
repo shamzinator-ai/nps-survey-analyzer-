@@ -1,13 +1,13 @@
 # NPS Survey Analyzer
 
-This repository contains a simple Streamlit application for analyzing NPS survey results with help from OpenAI's **GPT-4o-mini** model. The app allows non-technical users to upload survey data, translate free-text comments to English, categorize them, generate pivot tables for structured questions, and create a narrative report.
+This repository contains a simple Streamlit application for analyzing NPS survey results with help from OpenAI's **GPT-4o** model. The app allows non-technical users to upload survey data, translate free-text comments to English, categorize them, generate pivot tables for structured questions, and create a narrative report.
 The question **"1: How likely are you to recommend Twinkl to a friend or colleague?"** is automatically used to calculate the Net Promoter Score.
 
 ## Features
 
 - Upload CSV or Excel survey data.
 - Select columns for User ID, location, structured questions and free-text responses.
-- Automatic translation of comments to English using GPT-4o-mini.
+- Automatic translation of comments to English using GPT-4o.
 - AI-driven categorization into a predefined list of categories.
 - Pivot tables with percentages and bar charts for structured questions.
 - High-level summary dashboard showing NPS score, distribution, category frequency and sentiment ratio.

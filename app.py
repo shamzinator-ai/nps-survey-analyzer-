@@ -41,7 +41,7 @@ if not openai.api_key:
         openai_async = openai.AsyncOpenAI(api_key=openai.api_key)
     else:
         st.stop()
-MODEL = "gpt-4o-mini"
+MODEL = "gpt-4o"
 
 # Provide user-friendly messages for common OpenAI errors
 def format_openai_error(e: Exception) -> str:
@@ -249,7 +249,7 @@ def detect_language_offline(text: str) -> str:
 
 @st.cache_data(show_spinner=False)
 def translate_text(text: str) -> Tuple[str, str]:
-    """Detect language and translate text to English using GPT-4o-mini."""
+    """Detect language and translate text to English using GPT-4o."""
     if not text or not text.strip():
         return "", ""
     lang = detect_language_offline(text)
@@ -280,7 +280,7 @@ def translate_text(text: str) -> Tuple[str, str]:
 
 @st.cache_data(show_spinner=False)
 def categorize_text(text: str) -> List[str]:
-    """Categorize text using GPT-4o-mini."""
+    """Categorize text using GPT-4o."""
     if not text:
         return []
     categories_str = ", ".join(CATEGORIES)
