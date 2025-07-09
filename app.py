@@ -169,19 +169,20 @@ async def async_translate_batch(texts: List[str]) -> List[Tuple[str, str, int, s
     return await asyncio.gather(*tasks)
 
 
-async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], int, str]]:
-    """Categorize a batch of texts concurrently."""
+async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], str, int, str]]:
+    """Categorize a batch of texts concurrently and return reasoning."""
 
     categories_str = ", ".join(CATEGORIES)
     system_prompt = (
         "You are a helpful assistant that tags survey comments with all relevant "
-        "categories from the provided list. Return a comma-separated list of "
-        "matching categories. If none apply, return 'None'."
+        "categories from the provided list. Respond in JSON with keys 'categories' "
+        "(comma separated if multiple) and 'reasoning' explaining your choices. "
+        "If no categories apply, return 'categories' as 'None'."
     )
 
-    async def _categorize(text: str) -> Tuple[List[str], int, str]:
+    async def _categorize(text: str) -> Tuple[List[str], str, int, str]:
         if not text:
-            return [], 0, ""
+            return [], "", 0, ""
         user_prompt = f"Categories: {categories_str}\nComment: {text}"
         try:
             response = await openai.chat.completions.create(
@@ -192,15 +193,26 @@ async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], int,
                 ],
                 temperature=0,
             )
-            result = response.choices[0].message.content.strip()
+            content = response.choices[0].message.content.strip()
             tokens = response.usage.total_tokens if getattr(response, "usage", None) else 0
             finish = response.choices[0].finish_reason or ""
-            if result.lower() == "none":
-                return [], tokens, finish
-            return [c.strip() for c in result.split(',')], tokens, finish
+            try:
+                data = json.loads(content)
+                cat_value = data.get("categories", "")
+                reasoning = data.get("reasoning", "").strip()
+            except json.JSONDecodeError:
+                cat_value = content
+                reasoning = ""
+            if isinstance(cat_value, str) and cat_value.lower() == "none":
+                cats = []
+            elif isinstance(cat_value, str):
+                cats = [c.strip() for c in cat_value.split(',') if c.strip()]
+            else:
+                cats = [str(c).strip() for c in cat_value]
+            return cats, reasoning, tokens, finish
         except Exception as e:
             st.error(f"Categorization failed: {e}")
-            return [], 0, ""
+            return [], "", 0, ""
 
     tasks = [asyncio.create_task(_categorize(t)) for t in texts]
     return await asyncio.gather(*tasks)
@@ -349,6 +361,8 @@ def review_translations(df: pd.DataFrame, id_col: str) -> pd.DataFrame:
             st.write("**Original:**", row["Concatenated"])
             st.write(f"Tokens used: {row.get('ModelTokens', 0)}")
             st.write(f"Finish reason: {row.get('FinishReason', '')}")
+            with st.expander("AI reasoning"):
+                st.write(row.get("CatReasoning", ""))
             new_trans = st.text_area(
                 "Translated", value=row["Translated"], key=f"trans_{idx}",
                 help="Edit the AI translation if it looks incorrect.")
@@ -472,6 +486,7 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFra
     translated: List[str] = ["" for _ in concat]
     languages: List[str] = ["" for _ in concat]
     categories: List[str] = ["" for _ in concat]
+    cat_reasoning: List[str] = ["" for _ in concat]
     token_usage: List[int] = [0 for _ in concat]
     finish_reasons: List[str] = ["" for _ in concat]
 
@@ -489,14 +504,16 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFra
         batch_finish_trans = [fin for _, _, _, fin in trans_lang]
 
         batch_cats_data = asyncio.run(async_categorize_batch(batch_trans))
-        batch_cats = [cats for cats, _, _ in batch_cats_data]
-        batch_toks_cat = [tok for _, tok, _ in batch_cats_data]
-        batch_finish_cat = [fin for _, _, fin in batch_cats_data]
+        batch_cats = [cats for cats, _, _, _ in batch_cats_data]
+        batch_reasons = [reason for _, reason, _, _ in batch_cats_data]
+        batch_toks_cat = [tok for _, _, tok, _ in batch_cats_data]
+        batch_finish_cat = [fin for _, _, _, fin in batch_cats_data]
 
         for offset, idx in enumerate(range(start_idx, min(start_idx + batch_size, len(concat)))):
             translated[idx] = batch_trans[offset]
             languages[idx] = batch_langs[offset]
             categories[idx] = ", ".join(batch_cats[offset])
+            cat_reasoning[idx] = batch_reasons[offset]
             token_usage[idx] = batch_toks_trans[offset] + batch_toks_cat[offset]
             finish_reasons[idx] = f"{batch_finish_trans[offset]}; {batch_finish_cat[offset]}"
 
@@ -511,6 +528,7 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFra
     df["Translated"] = translated
     df["Language"] = languages
     df["Categories"] = categories
+    df["CatReasoning"] = cat_reasoning
     df["ModelTokens"] = token_usage
     df["FinishReason"] = finish_reasons
     return df
