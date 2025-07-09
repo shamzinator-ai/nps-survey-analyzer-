@@ -24,6 +24,8 @@ This repository contains a simple Streamlit application for analyzing NPS survey
 - Language detection stored alongside translations.
 - Intermediate results saved after each processing batch.
 - Automatically resume processing from the last completed row on startup.
+- Choose whether to analyse structured questions only, free-text comments only,
+  or run both sequentially.
 
 ## Requirements
 
@@ -43,7 +45,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Use the sidebar to upload your survey file. The app will guide you through selecting free-text columns, processing translations with progress bars, and generating downloadable pivot tables, charts, and reports.
+Use the sidebar to upload your survey file. Pick an analysis mode (structured data, free text, or both) then select the relevant columns. Progress bars show translation status and you can download pivot tables, charts and reports.
 
 An example dataset `example_data.csv` is included for testing.
 

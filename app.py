@@ -415,8 +415,26 @@ def safe_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "_", name)
 
 
+def ensure_base_columns(df: pd.DataFrame) -> None:
+    """Ensure columns used in later steps exist even if text isn't processed."""
+    for col, default in [
+        ("Concatenated", ""),
+        ("Translated", ""),
+        ("Language", ""),
+        ("Categories", ""),
+        ("CategoryReasoning", ""),
+        ("ModelTokens", 0),
+        ("FinishReason", ""),
+        ("Flagged", False),
+    ]:
+        if col not in df.columns:
+            df[col] = default
+
+
 def category_frequency(df: pd.DataFrame) -> pd.DataFrame:
     """Return counts and percentages for all categories including blanks."""
+    if "Categories" not in df.columns:
+        return pd.DataFrame(columns=["Category", "Count", "Percent"])
 
     cat_lists: list[str] = []
     for cats in df["Categories"].fillna(""):
@@ -435,6 +453,8 @@ def category_frequency(df: pd.DataFrame) -> pd.DataFrame:
 
 def sentiment_metrics(df: pd.DataFrame) -> tuple[int, int]:
     """Return counts of positive and negative comments."""
+    if "Categories" not in df.columns:
+        return 0, 0
     pos = df["Categories"].str.contains("Positive Words", na=False).sum()
     neg = df["Categories"].str.contains("Negative Words", na=False).sum()
     return pos, neg
@@ -526,17 +546,23 @@ def validate_file(uploaded_file) -> bool:
     return True
 
 
-def validate_columns(user_id_col: str, location_col: str,
-                     free_text_cols: List[str], structured_cols: List[str]) -> bool:
+def validate_columns(
+    user_id_col: str,
+    location_col: str,
+    free_text_cols: List[str],
+    structured_cols: List[str],
+    require_free_text: bool = True,
+    require_structured: bool = True,
+) -> bool:
     """Ensure mandatory columns are selected."""
     errors = []
     if not user_id_col:
         errors.append("Please select a user ID column.")
     if not location_col:
         errors.append("Please select a location column.")
-    if not free_text_cols:
+    if require_free_text and not free_text_cols:
         errors.append("Select at least one free-text column.")
-    if not structured_cols:
+    if require_structured and not structured_cols:
         errors.append("Select at least one structured column.")
     if errors:
         for msg in errors:
@@ -939,6 +965,9 @@ if file and validate_file(file):
         for cat, desc in CATEGORY_DESCRIPTIONS.items():
             st.write(f"**{cat}** - {desc}")
 
+    analysis_option = st.radio("Analysis Mode", ["Structured Data Only", "Free Text Only", "Both"], index=2, help="Choose what type of analysis to run.")
+
+
     if st.button(
         "Process Data",
         help="Translate comments, categorise them and generate summaries."
@@ -948,6 +977,8 @@ if file and validate_file(file):
             location_col,
             free_text_cols,
             structured_cols,
+            require_free_text=analysis_option != "Structured Data Only",
+            require_structured=analysis_option != "Free Text Only",
         ):
             st.stop()
         partial_path = cache_path.replace(".pkl", "_partial.pkl")
@@ -958,34 +989,37 @@ if file and validate_file(file):
         for col, vals in addl_filters.items():
             df_to_process = df_to_process[df_to_process[col].isin(vals)]
 
-        with st.spinner("Processing free-text responses..."):
-            processed_subset = process_free_text(df_to_process, free_text_cols, cache_path)
+        if analysis_option != "Structured Data Only":
+            with st.spinner("Processing free-text responses..."):
+                processed_subset = process_free_text(df_to_process, free_text_cols, cache_path)
 
-        # Merge processed rows back into the main dataframe so previously
-        # unprocessed English comments are retained for later analysis.
-        df.update(processed_subset)
+            # Merge processed rows back into the main dataframe so previously
+            # unprocessed English comments are retained for later analysis.
+            df.update(processed_subset)
 
-        st.success("Processing complete")
-        download_link(
-            df,
-            "full_results.csv",
-            "Download All Results",
-            help="Save the enriched data with translations and categories.",
-        )
-        export_full_excel(
-            df,
-            "full_results.xlsx",
-            "Download All Results Excel",
-            help="Save the enriched data as an Excel file.",
-        )
+            st.success("Processing complete")
+            download_link(
+                df,
+                "full_results.csv",
+                "Download All Results",
+                help="Save the enriched data with translations and categories.",
+            )
+            export_full_excel(
+                df,
+                "full_results.xlsx",
+                "Download All Results Excel",
+                help="Save the enriched data as an Excel file.",
+            )
 
-        processed_subset = review_translations(processed_subset, user_id_col)
-        # Persist edits back into the full DataFrame and cache
-        df.update(processed_subset)
-        st.session_state["processed_df"] = df
-        df.to_pickle(cache_path)
-        if os.path.exists(partial_path):
-            os.remove(partial_path)
+            processed_subset = review_translations(processed_subset, user_id_col)
+            # Persist edits back into the full DataFrame and cache
+            df.update(processed_subset)
+            st.session_state["processed_df"] = df
+            df.to_pickle(cache_path)
+            if os.path.exists(partial_path):
+                os.remove(partial_path)
+        else:
+            ensure_base_columns(df)
 
         nps_col = next((c for c in structured_cols if "nps" in c.lower()), None)
 
@@ -997,125 +1031,127 @@ if file and validate_file(file):
 
         display_summary(analysis_df, nps_col)
 
-        st.subheader("Structured Data Analysis")
-        zip_entries: list[tuple[str, bytes]] = []
-        for col in structured_cols:
-            pivot = generate_pivot(analysis_df, col)
-            st.write(f"### {col}")
-            st.dataframe(pivot)
-            chart_buf = bar_chart(pivot, f"{col} Responses")
-            c1, c2 = st.columns(2)
-            with c1:
-                download_link(
-                    pivot,
-                    f"pivot_{col}.csv",
-                    f"Download {col} CSV",
-                    help="Download the pivot table as a CSV file.",
-                )
-            with c2:
-                export_excel(
-                    pivot,
-                    f"pivot_{col}.xlsx",
-                    f"Download {col} Excel",
-                    help="Download the pivot table as an Excel file."
-                )
-            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
-            safe = safe_name(col)
-            zip_entries.append((f"{safe}/table.csv", csv_bytes))
-            zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+        if analysis_option != "Free Text Only":
+            st.subheader("Structured Data Analysis")
+            zip_entries: list[tuple[str, bytes]] = []
+            for col in structured_cols:
+                pivot = generate_pivot(analysis_df, col)
+                st.write(f"### {col}")
+                st.dataframe(pivot)
+                chart_buf = bar_chart(pivot, f"{col} Responses")
+                c1, c2 = st.columns(2)
+                with c1:
+                    download_link(
+                        pivot,
+                        f"pivot_{col}.csv",
+                        f"Download {col} CSV",
+                        help="Download the pivot table as a CSV file.",
+                    )
+                with c2:
+                    export_excel(
+                        pivot,
+                        f"pivot_{col}.xlsx",
+                        f"Download {col} Excel",
+                        help="Download the pivot table as an Excel file."
+                    )
+                csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+                safe = safe_name(col)
+                zip_entries.append((f"{safe}/table.csv", csv_bytes))
+                zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
 
-        if zip_entries:
-            zip_buf = BytesIO()
-            with zipfile.ZipFile(zip_buf, "w") as zipf:
-                for name, data in zip_entries:
-                    zipf.writestr(name, data)
-            zip_buf.seek(0)
-            st.download_button(
-                "Download All Charts/Tables",
-                zip_buf,
-                "all_pivots.zip",
-                help="Download every pivot table CSV and chart PNG at once."
-            )
-
-        st.subheader("Categorized Comments")
-        display_cols = [
-            user_id_col,
-            location_col,
-            'Concatenated',
-            'Translated',
-            'Language',
-            'Categories',
-            'ModelTokens',
-            'FinishReason',
-            'Flagged',
-        ]
-        st.dataframe(analysis_df[display_cols])
-        if st.button(
-            "Spot-check 5 Random Comments",
-            help="Preview a random sample to verify AI results."
-        ):
-            sample = analysis_df.sample(min(5, len(analysis_df)))
-            for _, row in sample.iterrows():
-                st.write(f"**User {row[user_id_col]}** - {row['Categories']}")
-                st.write(row['Translated'])
-
-        if st.button(
-            "Generate Report",
-            help="Create a narrative summary of all findings."
-        ):
-            segments_to_process = selected_segments if selected_segments else [None]
-            zip_buffer = BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w") as zipf:
-                for segment in segments_to_process:
-                    seg_df = df if segment is None else df[df[location_col] == segment]
-                    for col, vals in addl_filters.items():
-                        seg_df = seg_df[seg_df[col].isin(vals)]
-                    if seg_df.empty:
-                        continue
-                    segment_title = segment if segment is not None else "All"
-
-                    st.markdown(f"## KPIs for {segment_title}")
-                    nps_pivot, cat_pivot, (pos, neg) = compute_kpis(seg_df, nps_col)
-                    if not nps_pivot.empty:
-                        st.dataframe(nps_pivot)
-                        bar_chart(nps_pivot, f"{segment_title} NPS Distribution")
-                    st.dataframe(cat_pivot)
-                    bar_chart(cat_pivot, f"{segment_title} Category Frequency")
-                    st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
-
-                    report_text = generate_report(seg_df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
-                    if not report_text:
-                        continue
-                    st.markdown(f"## Report for {segment_title}")
-                    st.markdown(report_text)
-                    pivot_dict = {col: generate_pivot(seg_df, col) for col in structured_cols}
-                    pivot_dict["Category Frequency"] = cat_pivot
-                    if not nps_pivot.empty:
-                        pivot_dict["NPS Distribution"] = nps_pivot
-                    docx_file = save_docx(report_text, pivot_dict)
-                    pdf_file = save_pdf(report_text, pivot_dict)
-                    if len(selected_segments) <= 1:
-                        st.download_button(
-                            "Download DOCX",
-                            docx_file,
-                            f"{segment_title}_report.docx",
-                            help="Save the report as a Word document."
-                        )
-                        st.download_button(
-                            "Download PDF",
-                            pdf_file,
-                            f"{segment_title}_report.pdf",
-                            help="Save the report as a PDF file."
-                        )
-                    else:
-                        zipf.writestr(f"{segment_title}_report.docx", docx_file.getvalue())
-                        zipf.writestr(f"{segment_title}_report.pdf", pdf_file.getvalue())
-            if len(selected_segments) > 1:
-                zip_buffer.seek(0)
+            if zip_entries:
+                zip_buf = BytesIO()
+                with zipfile.ZipFile(zip_buf, "w") as zipf:
+                    for name, data in zip_entries:
+                        zipf.writestr(name, data)
+                zip_buf.seek(0)
                 st.download_button(
-                    "Download Reports ZIP",
-                    zip_buffer,
-                    "reports.zip",
+                    "Download All Charts/Tables",
+                    zip_buf,
+                    "all_pivots.zip",
+                    help="Download every pivot table CSV and chart PNG at once."
+                )
+
+        if analysis_option != "Structured Data Only":
+            st.subheader("Categorized Comments")
+            display_cols = [
+                user_id_col,
+                location_col,
+                'Concatenated',
+                'Translated',
+                'Language',
+                'Categories',
+                'ModelTokens',
+                'FinishReason',
+                'Flagged',
+            ]
+            st.dataframe(analysis_df[display_cols])
+            if st.button(
+                "Spot-check 5 Random Comments",
+                help="Preview a random sample to verify AI results."
+            ):
+                sample = analysis_df.sample(min(5, len(analysis_df)))
+                for _, row in sample.iterrows():
+                    st.write(f"**User {row[user_id_col]}** - {row['Categories']}")
+                    st.write(row['Translated'])
+    
+            if st.button(
+                "Generate Report",
+                help="Create a narrative summary of all findings."
+            ):
+                segments_to_process = selected_segments if selected_segments else [None]
+                zip_buffer = BytesIO()
+                with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                    for segment in segments_to_process:
+                        seg_df = df if segment is None else df[df[location_col] == segment]
+                        for col, vals in addl_filters.items():
+                            seg_df = seg_df[seg_df[col].isin(vals)]
+                        if seg_df.empty:
+                            continue
+                        segment_title = segment if segment is not None else "All"
+    
+                        st.markdown(f"## KPIs for {segment_title}")
+                        nps_pivot, cat_pivot, (pos, neg) = compute_kpis(seg_df, nps_col)
+                        if not nps_pivot.empty:
+                            st.dataframe(nps_pivot)
+                            bar_chart(nps_pivot, f"{segment_title} NPS Distribution")
+                        st.dataframe(cat_pivot)
+                        bar_chart(cat_pivot, f"{segment_title} Category Frequency")
+                        st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
+    
+                        report_text = generate_report(seg_df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
+                        if not report_text:
+                            continue
+                        st.markdown(f"## Report for {segment_title}")
+                        st.markdown(report_text)
+                        pivot_dict = {col: generate_pivot(seg_df, col) for col in structured_cols}
+                        pivot_dict["Category Frequency"] = cat_pivot
+                        if not nps_pivot.empty:
+                            pivot_dict["NPS Distribution"] = nps_pivot
+                        docx_file = save_docx(report_text, pivot_dict)
+                        pdf_file = save_pdf(report_text, pivot_dict)
+                        if len(selected_segments) <= 1:
+                            st.download_button(
+                                "Download DOCX",
+                                docx_file,
+                                f"{segment_title}_report.docx",
+                                help="Save the report as a Word document."
+                            )
+                            st.download_button(
+                                "Download PDF",
+                                pdf_file,
+                                f"{segment_title}_report.pdf",
+                                help="Save the report as a PDF file."
+                            )
+                        else:
+                            zipf.writestr(f"{segment_title}_report.docx", docx_file.getvalue())
+                            zipf.writestr(f"{segment_title}_report.pdf", pdf_file.getvalue())
+                if len(selected_segments) > 1:
+                    zip_buffer.seek(0)
+                    st.download_button(
+                        "Download Reports ZIP",
+                        zip_buffer,
+                        "reports.zip",
                     help="Download all segment reports as a ZIP file."
                 )
 else:
