@@ -433,7 +433,10 @@ def generate_report(df: pd.DataFrame) -> str:
         "Suggested Next Steps with rationale, priority and confidence level;\n"
         "Devils Advocate (limitations and possible biases);\n"
         "Conclusion with summary and non-obvious recommendations.\n"
+        "Every assertion must be supported by one to ten verbatim quotes "
+        "from the provided comments including User IDs. "
         "For every statement include raw number and percentage of supporting comments. "
+        "Do not invent data; reference only the provided input. "
         "Avoid bullet points and write in narrative paragraphs."
     )
     user_content = df.to_csv(index=False)
