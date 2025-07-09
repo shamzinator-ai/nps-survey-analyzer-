@@ -5,7 +5,6 @@ import re
 from typing import List, Tuple
 import time
 import asyncio
-import hashlib
 from langdetect import detect
 from langdetect.lang_detect_exception import LangDetectException
 
@@ -48,9 +47,7 @@ def format_openai_error(e: Exception) -> str:
         return f"OpenAI API error {e.status_code}: {e.message}"
     return str(e)
 
-# Directory for cached processed data
-CACHE_DIR = "cache"
-os.makedirs(CACHE_DIR, exist_ok=True)
+
 
 CATEGORIES = [
     "Search/Navigation", "Resource Mention", "User Question", "Translation Mention",
@@ -165,7 +162,6 @@ def detect_language_offline(text: str) -> str:
     except LangDetectException:
         return ""
 
-@st.cache_data(show_spinner=False)
 def translate_text(text: str) -> Tuple[str, str]:
     """Detect language and translate text to English using GPT-4o-mini."""
     if not text or not text.strip():
@@ -196,7 +192,6 @@ def translate_text(text: str) -> Tuple[str, str]:
         return text, ""
 
 
-@st.cache_data(show_spinner=False)
 def categorize_text(text: str) -> List[str]:
     """Categorize text using GPT-4o-mini."""
     if not text:
@@ -674,13 +669,13 @@ def save_pdf(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
 
 
 def process_free_text(
-    df: pd.DataFrame, free_text_cols: List[str], cache_path: str
+    df: pd.DataFrame, free_text_cols: List[str]
 ) -> pd.DataFrame:
     """Concatenate, translate and categorize free-text columns with progress.
 
-    The function saves intermediate results to ``cache_path`` with a ``_partial``
-    suffix after each processed batch so that work can be resumed if the app is
-    restarted.
+    This function previously saved intermediate results to a cache file so that
+    work could be resumed if the app restarted. Caching has been removed to
+    ensure only the uploaded dataset is used.
     """
 
     concat = [
@@ -708,7 +703,6 @@ def process_free_text(
     progress = st.progress(0.0, text="Starting...")
     start_time = time.time()
     batch_size = 5
-    partial_path = cache_path.replace(".pkl", "_partial.pkl")
 
     for batch_start in range(0, len(to_process), batch_size):
         batch_indices = to_process[batch_start : batch_start + batch_size]
@@ -744,8 +738,7 @@ def process_free_text(
         remaining = rate * (len(to_process) - processed)
         progress.progress(processed / len(to_process), text=f"Processing... ETA {int(remaining)}s")
 
-        # Persist partial results after each batch
-        df.to_pickle(partial_path)
+
 
     progress.empty()
     return df
@@ -804,30 +797,16 @@ else:
     file = st.session_state.get("uploaded_file")
 
 if file and validate_file(file):
-    raw_bytes = file.getvalue()
-    # Use SHA-256 rather than MD5 to generate a cache key for the uploaded file
-    checksum = hashlib.sha256(raw_bytes).hexdigest()
-    cache_path = os.path.join(CACHE_DIR, f"{checksum}.pkl")
-    partial_path = os.path.join(CACHE_DIR, f"{checksum}_partial.pkl")
-    if "processed_df" in st.session_state:
-        df = st.session_state["processed_df"]
-    elif os.path.exists(cache_path):
-        df = pd.read_pickle(cache_path)
-        st.success("Loaded cached processed data")
-    elif os.path.exists(partial_path):
-        df = pd.read_pickle(partial_path)
-        st.info("Resuming from saved progress")
-    else:
-        df = read_uploaded_file(file)
-        if df is None:
-            st.stop()
-        if df.empty:
-            st.error("Uploaded file contains no data")
-            st.stop()
-        if df.isnull().all(axis=0).any():
-            st.warning("Some columns contain only missing values")
-        if df.isnull().all(axis=1).any():
-            st.warning("Some rows contain only missing values")
+    df = read_uploaded_file(file)
+    if df is None:
+        st.stop()
+    if df.empty:
+        st.error("Uploaded file contains no data")
+        st.stop()
+    if df.isnull().all(axis=0).any():
+        st.warning("Some columns contain only missing values")
+    if df.isnull().all(axis=1).any():
+        st.warning("Some rows contain only missing values")
 
     if "original_df" not in st.session_state:
         st.session_state["original_df"] = df.copy()
@@ -942,7 +921,6 @@ if file and validate_file(file):
             structured_cols,
         ):
             st.stop()
-        partial_path = cache_path.replace(".pkl", "_partial.pkl")
         # Apply filters before processing so only relevant rows are translated
         df_to_process = df
         if selected_segments:
@@ -951,7 +929,7 @@ if file and validate_file(file):
             df_to_process = df_to_process[df_to_process[col].isin(vals)]
 
         with st.spinner("Processing free-text responses..."):
-            df_to_process = process_free_text(df_to_process, free_text_cols, cache_path)
+            df_to_process = process_free_text(df_to_process, free_text_cols)
 
         df = df_to_process
 
@@ -971,9 +949,6 @@ if file and validate_file(file):
 
         df = review_translations(df, user_id_col)
         st.session_state["processed_df"] = df
-        df.to_pickle(cache_path)
-        if os.path.exists(partial_path):
-            os.remove(partial_path)
 
         nps_col = next((c for c in structured_cols if "nps" in c.lower()), None)
 
