@@ -114,11 +114,14 @@ def translate_text(text: str) -> Tuple[str, str]:
         response = openai.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0
+            temperature=0,
+            response_format={"type": "json_object"},
         )
         content = response.choices[0].message.content
         data = json.loads(content)
         return data.get("translation", "").strip(), data.get("language", "")
+    except json.JSONDecodeError as e:
+        st.error(f"Failed to parse JSON response: {e}")
     except Exception as e:
         st.error(f"Translation failed: {e}")
         return text, ""
@@ -145,12 +148,18 @@ def categorize_text(text: str) -> List[str]:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0
+            temperature=0,
+            response_format={"type": "json_object"},
         )
         result = response.choices[0].message.content.strip()
-        if result.lower() == "none":
+        data = json.loads(result)
+        categories_raw = data.get("categories", "")
+        if categories_raw.lower() == "none":
             return []
-        return [c.strip() for c in result.split(',')]
+        return [c.strip() for c in categories_raw.split(',')]
+    except json.JSONDecodeError as e:
+        st.error(f"Failed to parse JSON response: {e}")
+        return []
     except Exception as e:
         st.error(f"Categorization failed: {e}")
         return []
@@ -171,6 +180,7 @@ async def async_translate_batch(texts: List[str]) -> List[Tuple[str, str, int, s
                 model=MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
+                response_format={"type": "json_object"},
             )
             content = response.choices[0].message.content
             data = json.loads(content)
@@ -182,6 +192,9 @@ async def async_translate_batch(texts: List[str]) -> List[Tuple[str, str, int, s
                 tokens,
                 finish,
             )
+        except json.JSONDecodeError as e:
+            st.error(f"Failed to parse JSON response: {e}")
+            return text, "", 0, ""
         except Exception as e:
             st.error(f"Translation failed: {e}")
             return text, "", 0, ""
@@ -215,6 +228,7 @@ async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], str,
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0,
+                response_format={"type": "json_object"},
             )
             content = response.choices[0].message.content.strip()
             data = json.loads(content)
@@ -226,6 +240,9 @@ async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], str,
                 return [], reasoning, tokens, finish
             categories = [c.strip() for c in categories_raw.split(',')]
             return categories, reasoning, tokens, finish
+        except json.JSONDecodeError as e:
+            st.error(f"Failed to parse JSON response: {e}")
+            return [], "", 0, ""
         except Exception as e:
             st.error(f"Categorization failed: {e}")
             return [], "", 0, ""
