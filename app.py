@@ -18,6 +18,9 @@ import zipfile
 
 # Set your OpenAI API key via environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY", "")
+if not openai.api_key:
+    st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
+    st.stop()
 MODEL = "gpt-4o-mini"
 
 # Directory for cached processed data
