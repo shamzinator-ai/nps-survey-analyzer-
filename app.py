@@ -1061,6 +1061,37 @@ def apply_style():
 
 
 apply_style()
+
+# Sidebar toggle to switch to black text and blue buttons
+if "contrast_mode" not in st.session_state:
+    st.session_state["contrast_mode"] = False
+
+contrast_toggle = st.sidebar.toggle(
+    "Black text and blue buttons",
+    value=st.session_state["contrast_mode"],
+)
+st.session_state["contrast_mode"] = contrast_toggle
+
+if contrast_toggle:
+    st.markdown(
+        """
+        <style id="contrast-style">
+            html, body, [class*="css"] { color: #000 !important; }
+            .stButton>button {
+                background-color: #0E79B2 !important;
+                color: #fff !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        """
+        <style id="contrast-style"></style>
+        """,
+        unsafe_allow_html=True,
+    )
 st.title("NPS Survey Analyzer")
 
 st.sidebar.header("1. Upload Survey Data")
