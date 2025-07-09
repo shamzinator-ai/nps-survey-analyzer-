@@ -557,7 +557,9 @@ def create_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None
         # Pre-wrap labels to avoid using JavaScript expressions which can fail
         # during PNG conversion in vl-convert. Replace spaces with newline
         # characters before plotting.
-        pivot["Response_wrapped"] = pivot["Response"].str.replace(" ", "\n")
+        pivot["Response_wrapped"] = (
+            pivot["Response"].astype(str).str.replace(" ", "\n")
+        )
 
     enc_color = alt.Color(
         "Count:Q",
