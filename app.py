@@ -5,6 +5,8 @@ from typing import List, Tuple
 import time
 import asyncio
 import hashlib
+from langdetect import detect
+from langdetect.lang_detect_exception import LangDetectException
 
 import altair as alt
 import openai
@@ -127,11 +129,21 @@ CATEGORY_DESCRIPTIONS = {
 
 # ----------------------------- Utility Functions -----------------------------
 
+def detect_language_offline(text: str) -> str:
+    """Detect language locally using langdetect."""
+    try:
+        return detect(text)
+    except LangDetectException:
+        return ""
+
 @st.cache_data(show_spinner=False)
 def translate_text(text: str) -> Tuple[str, str]:
     """Detect language and translate text to English using GPT-4o-mini."""
     if not text or not text.strip():
         return "", ""
+    lang = detect_language_offline(text)
+    if lang.lower().startswith("en"):
+        return text, "English"
     prompt = (
         "Detect the language of the following text and translate it to English. "
         "Respond in JSON with keys 'language' and 'translation'.\nText: " + text
@@ -197,6 +209,9 @@ async def async_translate_batch(texts: List[str]) -> List[Tuple[str, str, int, s
     async def _translate(text: str) -> Tuple[str, str, int, str]:
         if not text or not text.strip():
             return "", "", 0, ""
+        lang = detect_language_offline(text)
+        if lang.lower().startswith("en"):
+            return text, "English", 0, "skipped"
         prompt = (
             "Detect the language of the following text and translate it to English."
             "Respond in JSON with keys 'language' and 'translation'.\nText: " + text
@@ -488,7 +503,8 @@ def review_translations(df: pd.DataFrame, id_col: str) -> pd.DataFrame:
     )
     flags = []
     for idx, row in df.iterrows():
-        with st.expander(f"User {row[id_col]}"):
+        user_val = row.get(id_col, "Unknown")
+        with st.expander(f"User {user_val}"):
             st.write("**Original:**", row["Concatenated"])
             st.write(f"Tokens used: {row.get('ModelTokens', 0)}")
             st.write(f"Finish reason: {row.get('FinishReason', '')}")
@@ -671,7 +687,12 @@ def process_free_text(
             df.at[idx, "Categories"] = ", ".join(batch_cats[offset])
             df.at[idx, "CategoryReasoning"] = batch_reason[offset]
             df.at[idx, "ModelTokens"] = batch_toks_trans[offset] + batch_toks_cat[offset]
-            df.at[idx, "FinishReason"] = f"{batch_finish_trans[offset]}; {batch_finish_cat[offset]}"
+            fin_trans = batch_finish_trans[offset]
+            fin_cat = batch_finish_cat[offset]
+            if fin_trans == fin_cat:
+                df.at[idx, "FinishReason"] = fin_trans
+            else:
+                df.at[idx, "FinishReason"] = f"T:{fin_trans}; C:{fin_cat}"
 
         processed = batch_start + len(batch_indices)
         rate = (time.time() - start_time) / (processed if processed else 1)
@@ -943,7 +964,7 @@ if file and validate_file(file):
             help="Save the full dataset with translations and categories."
         )
         export_full_excel(
-            df,
+            analysis_df,
             "full_results.xlsx",
             "Download All Results Excel",
             help="Save the full dataset as an Excel file."
