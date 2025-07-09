@@ -291,6 +291,10 @@ def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
 def create_chart(pivot: pd.DataFrame, title: str):
     """Return an Altair chart object matching the on-screen chart."""
     color_range = ["#ff66b3", "#3399ff"]
+
+    # Ensure the expected column name exists for the X encoding.
+    pivot = pivot.rename(columns={"Category": "Response"})
+
     chart = (
         alt.Chart(pivot, background="white")
         .mark_bar()
