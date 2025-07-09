@@ -27,6 +27,7 @@ The question **"1: How likely are you to recommend Twinkl to a friend or colleag
 - Intermediate results saved after each processing batch.
 - Automatically resume processing from the last completed row on startup.
 - Clear cached data for the uploaded survey using the **Clear Cached Data** button.
+- Toggle to switch all text to black and buttons to blue.
 
 ## Requirements
 
