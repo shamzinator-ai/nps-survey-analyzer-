@@ -728,6 +728,18 @@ if file and validate_file(file):
         help="Choose segments to focus on or leave empty for all."
     )
 
+    addl_filter_cols = st.multiselect("Additional segment columns to filter (optional)",
+        options=[c for c in df.columns if c not in free_text_cols + [user_id_col, location_col]],
+        help="Select other columns like career type to filter by."
+    )
+
+    addl_filters = {}
+    for col in addl_filter_cols:
+        opts = df[col].dropna().unique().tolist()
+        selected = st.multiselect(f"Values for {col}", options=opts, key=f"values_{col}")
+        if selected:
+            addl_filters[col] = selected
+
     with st.sidebar.expander("Category descriptions"):
         for cat, desc in CATEGORY_DESCRIPTIONS.items():
             st.write(f"**{cat}** - {desc}")
@@ -759,7 +771,9 @@ if file and validate_file(file):
 
         analysis_df = df
         if selected_segments:
-            analysis_df = df[df[location_col].isin(selected_segments)]
+            analysis_df = analysis_df[analysis_df[location_col].isin(selected_segments)]
+        for col, vals in addl_filters.items():
+            analysis_df = analysis_df[analysis_df[col].isin(vals)]
 
         display_summary(analysis_df, nps_col)
 
@@ -828,6 +842,8 @@ if file and validate_file(file):
             with zipfile.ZipFile(zip_buffer, "w") as zipf:
                 for segment in segments_to_process:
                     seg_df = df if segment is None else df[df[location_col] == segment]
+                    for col, vals in addl_filters.items():
+                        seg_df = seg_df[seg_df[col].isin(vals)]
                     if seg_df.empty:
                         continue
                     segment_title = segment if segment is not None else "All"
