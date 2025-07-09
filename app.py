@@ -352,6 +352,20 @@ def export_excel(df: pd.DataFrame, filename: str, label: str, help: str | None =
     )
 
 
+def export_full_excel(df: pd.DataFrame, filename: str, label: str, help: str | None = None):
+    """Download the entire processed DataFrame as an Excel file."""
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False)
+    st.download_button(
+        label,
+        buffer.getvalue(),
+        file_name=filename,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help=help,
+    )
+
+
 def read_uploaded_file(uploaded_file) -> pd.DataFrame | None:
     """Load an uploaded CSV or Excel file with encoding validation."""
     raw_bytes = uploaded_file.getvalue()
@@ -788,6 +802,12 @@ if file and validate_file(file):
             "full_results.csv",
             "Download All Results",
             help="Save the full dataset with translations and categories."
+        )
+        export_full_excel(
+            df,
+            "full_results.xlsx",
+            "Download All Results Excel",
+            help="Save the full dataset as an Excel file."
         )
 
         if st.button(
