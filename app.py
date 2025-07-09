@@ -331,11 +331,47 @@ def export_excel(df: pd.DataFrame, filename: str, label: str, help: str | None =
     )
 
 
+def read_uploaded_file(uploaded_file) -> pd.DataFrame | None:
+    """Load an uploaded CSV or Excel file with encoding validation."""
+    raw_bytes = uploaded_file.getvalue()
+    try:
+        if uploaded_file.name.endswith(("xls", "xlsx")):
+            return pd.read_excel(BytesIO(raw_bytes))
+        try:
+            return pd.read_csv(BytesIO(raw_bytes), encoding="utf-8")
+        except UnicodeDecodeError:
+            st.warning("File is not UTF-8 encoded, attempting latin-1 decoding")
+            return pd.read_csv(BytesIO(raw_bytes), encoding="latin-1")
+    except UnicodeDecodeError as e:
+        st.error(f"Encoding error: {e}")
+    except Exception as e:
+        st.error(f"Failed to read file: {e}")
+    return None
+
 def validate_file(uploaded_file) -> bool:
     """Basic checks for uploaded file size and type."""
     max_size = 10 * 1024 * 1024  # 10MB
     if uploaded_file.size > max_size:
         st.error("File too large. Maximum size is 10MB.")
+        return False
+    return True
+
+
+def validate_columns(user_id_col: str, location_col: str,
+                     free_text_cols: List[str], structured_cols: List[str]) -> bool:
+    """Ensure mandatory columns are selected."""
+    errors = []
+    if not user_id_col:
+        errors.append("Please select a user ID column.")
+    if not location_col:
+        errors.append("Please select a location column.")
+    if not free_text_cols:
+        errors.append("Select at least one free-text column.")
+    if not structured_cols:
+        errors.append("Select at least one structured column.")
+    if errors:
+        for msg in errors:
+            st.error(msg)
         return False
     return True
 
@@ -538,25 +574,16 @@ if file and validate_file(file):
         df = pd.read_pickle(cache_path)
         st.success("Loaded cached processed data")
     else:
-        try:
-            if file.name.endswith(("xls", "xlsx")):
-                df = pd.read_excel(BytesIO(raw_bytes))
-            else:
-                try:
-                    df = pd.read_csv(BytesIO(raw_bytes), encoding="utf-8")
-                except UnicodeDecodeError:
-                    st.warning("File is not UTF-8 encoded, attempting latin-1 decoding")
-                    df = pd.read_csv(BytesIO(raw_bytes), encoding="latin-1")
-            if df.empty:
-                st.error("Uploaded file contains no data")
-                st.stop()
-            if df.isnull().all(axis=0).any():
-                st.warning("Some columns contain only missing values")
-            if df.isnull().all(axis=1).any():
-                st.warning("Some rows contain only missing values")
-        except Exception as e:
-            st.error(f"Failed to read file: {e}")
+        df = read_uploaded_file(file)
+        if df is None:
             st.stop()
+        if df.empty:
+            st.error("Uploaded file contains no data")
+            st.stop()
+        if df.isnull().all(axis=0).any():
+            st.warning("Some columns contain only missing values")
+        if df.isnull().all(axis=1).any():
+            st.warning("Some rows contain only missing values")
 
     st.subheader("Data Preview")
     st.dataframe(df.head(10))
@@ -601,18 +628,12 @@ if file and validate_file(file):
         "Process Data",
         help="Translate comments, categorise them and generate summaries."
     ):
-        errors = []
-        if not user_id_col:
-            errors.append("Please select a user ID column.")
-        if not location_col:
-            errors.append("Please select a location column.")
-        if not free_text_cols:
-            errors.append("Select at least one free-text column.")
-        if not structured_cols:
-            errors.append("Select at least one structured column.")
-        if errors:
-            for msg in errors:
-                st.error(msg)
+        if not validate_columns(
+            user_id_col,
+            location_col,
+            free_text_cols,
+            structured_cols,
+        ):
             st.stop()
         with st.spinner("Processing free-text responses..."):
             df = process_free_text(df, free_text_cols)
