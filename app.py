@@ -86,6 +86,7 @@ DEFAULT_FREE_TEXT_COLUMNS = [
     "3: Thanks. Please tell us more about your score.",
     "4: Please tell us more on how we can improve your experience with Twinkl.",
     "7: We'd love to know more about your answers, especially where we can improve your website experience.",
+    "10: We'd love to know more about your answers, especially where we can improve the quality of our content for you.",
     "22: How can we improve your understanding of your membership and any of the products and features you already use?",
     "23: We’d love to understand more about your answer to this question, and how we can make your subscription easier to understand.",
     "24: Is there anything else you would like to tell us about your Twinkl experience?",
@@ -112,6 +113,7 @@ EXCLUDED_STRUCTURED_COLUMNS = [
     "FinishReason",
     "Flagged",
     "ModelTokens",
+    "10: We'd love to know more about your answers, especially where we can improve the quality of our content for you.",
 ]
 
 # Predefined segment configurations used to auto-populate filters
