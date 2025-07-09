@@ -762,9 +762,14 @@ st.sidebar.header("1. Upload Survey Data")
 st.sidebar.markdown(
     "🔗 [Troubleshooting guide](README.md#troubleshooting)")
 file = st.sidebar.file_uploader(
-    "Upload CSV, XLS or XLSX", type=["csv", "xls", "xlsx"],
+    "Upload CSV, XLS or XLSX", type=["csv", "xls", "xlsx"], key="data_file",
     help="File must include a unique ID, location, at least one structured and one free-text column."
 )
+
+if file is not None:
+    st.session_state["uploaded_file"] = file
+else:
+    file = st.session_state.get("uploaded_file")
 
 if file and validate_file(file):
     raw_bytes = file.getvalue()
