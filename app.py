@@ -55,6 +55,18 @@ DEFAULT_FREE_TEXT_COLUMNS = [
     "24: Is there anything else you would like to tell us about your Twinkl experience?",
 ]
 
+# Predefined segment configurations used to auto-populate filters
+PREDEFINED_SEGMENTS = {
+    "UK Parents": {
+        "location_values": ["England"],
+        "filters": {"simplified career": ["Parent"]},
+    },
+    "US Teachers": {
+        "location_values": ["United States"],
+        "filters": {"simplified career": ["Teacher"]},
+    },
+}
+
 # Map each category to a short description shown in the sidebar
 CATEGORY_DESCRIPTIONS = {
     "Search/Navigation": "Finding resources or moving around the site",
@@ -773,21 +785,47 @@ if file and validate_file(file):
         help="Responses to these columns will be summarised in pivot tables."
     )
 
+    preset_name = st.selectbox(
+        "Predefined segment (optional)",
+        ["None"] + list(PREDEFINED_SEGMENTS.keys()),
+        help="Automatically populate filters for common segments."
+    )
+    preset = PREDEFINED_SEGMENTS.get(preset_name)
+
     segment_options = df[location_col].dropna().unique().tolist()
+    preset_segments = []
+    if preset:
+        preset_segments = [s for s in preset.get("location_values", []) if s in segment_options]
     selected_segments = st.multiselect(
-        "Filter by segment (optional)", options=segment_options,
+        "Filter by segment (optional)",
+        options=segment_options,
+        default=preset_segments,
         help="Choose segments to focus on or leave empty for all."
     )
 
-    addl_filter_cols = st.multiselect("Additional segment columns to filter (optional)",
-        options=[c for c in df.columns if c not in free_text_cols + [user_id_col, location_col]],
+    filter_col_options = [c for c in df.columns if c not in free_text_cols + [user_id_col, location_col]]
+    preset_filter_cols = []
+    if preset:
+        preset_filter_cols = [c for c in preset.get("filters", {}) if c in filter_col_options]
+    addl_filter_cols = st.multiselect(
+        "Additional segment columns to filter (optional)",
+        options=filter_col_options,
+        default=preset_filter_cols,
         help="Select other columns like career type to filter by."
     )
 
     addl_filters = {}
     for col in addl_filter_cols:
         opts = df[col].dropna().unique().tolist()
-        selected = st.multiselect(f"Values for {col}", options=opts, key=f"values_{col}")
+        default_vals = []
+        if preset and col in preset.get("filters", {}):
+            default_vals = [v for v in preset["filters"][col] if v in opts]
+        selected = st.multiselect(
+            f"Values for {col}",
+            options=opts,
+            default=default_vals,
+            key=f"values_{col}",
+        )
         if selected:
             addl_filters[col] = selected
 

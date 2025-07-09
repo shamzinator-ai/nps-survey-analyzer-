@@ -14,6 +14,7 @@ This repository contains a simple Streamlit application for analyzing NPS survey
 - Downloadable results and pivot tables.
 - Generate a narrative report and download it as a DOCX or PDF file.
 - Filter data by multiple segment columns at once (e.g., Country and Career Type).
+- Quickly apply predefined segment filters such as **UK Parents** or **US Teachers**.
 - Reports include pivot tables and bar chart images.
 - When multiple segments are selected, generate a report for each and download all DOCX/PDF files in a ZIP.
 - Progress bars for long-running translation and categorization tasks.
