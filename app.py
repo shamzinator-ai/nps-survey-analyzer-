@@ -223,6 +223,20 @@ IMPORTANCE_ORDER = [
     "5 - Very important",
 ]
 
+# Color palettes for rating scales: negatives=pink, neutral=yellow, positives=blue
+NEGATIVE_COLORS = ["#ffb3c6", "#ff7aa9", "#ff4d94"]
+NEUTRAL_COLOR = "#ffd966"
+POSITIVE_COLORS = ["#99cfff", "#66b2ff", "#3399ff"]
+
+def rating_colors(order: List[str]) -> List[str]:
+    """Return a color palette matching the given rating order."""
+    if order in (RATING_ORDER_EASE, CONTENT_RATING_ORDER, SATISFACTION_ORDER):
+        return NEGATIVE_COLORS + [NEUTRAL_COLOR] + POSITIVE_COLORS
+    if order == IMPORTANCE_ORDER:
+        return NEGATIVE_COLORS[1:] + [NEUTRAL_COLOR] + POSITIVE_COLORS[1:]
+    # Fallback gradient
+    return ["#ff66b3", "#3399ff"]
+
 # ----------------------------- Utility Functions -----------------------------
 
 def detect_language_offline(text: str) -> str:
@@ -486,7 +500,11 @@ def stacked_bar_chart(
                 axis=alt.Axis(format="%"),
                 title="Percent",
             ),
-            color=alt.Color("Rating:N", sort=order),
+            color=alt.Color(
+                "Rating:N",
+                sort=order,
+                scale=alt.Scale(domain=order, range=rating_colors(order)),
+            ),
             tooltip=["Rating", "Count"]
         )
         .properties(title=f"{title} \U0001F4CA", height=300)
@@ -519,7 +537,7 @@ def stacked_bar_chart(
     return png_buffer
 
 
-def create_chart(pivot: pd.DataFrame, title: str):
+def create_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None):
     """Return an Altair chart object matching the on-screen chart."""
     color_range = ["#ff66b3", "#3399ff"]
 
@@ -528,6 +546,18 @@ def create_chart(pivot: pd.DataFrame, title: str):
     # Remove any total row so it doesn't appear as its own bar
     if "Response" in pivot.columns:
         pivot = pivot[pivot["Response"] != "Total"]
+
+    enc_color = alt.Color(
+        "Count:Q",
+        scale=alt.Scale(range=color_range),
+        legend=None,
+    )
+    if order:
+        enc_color = alt.Color(
+            "Response:N",
+            sort=order,
+            scale=alt.Scale(domain=order, range=rating_colors(order)),
+        )
 
     chart = (
         alt.Chart(pivot, background="white")
@@ -544,11 +574,7 @@ def create_chart(pivot: pd.DataFrame, title: str):
                 ),
             ),
             y=alt.Y("Count:Q", title="Count"),
-            color=alt.Color(
-                "Count:Q",
-                scale=alt.Scale(range=color_range),
-                legend=None,
-            ),
+            color=enc_color,
             tooltip=["Response", "Count"],
         )
         .properties(title=f"{title} 📊", height=300)
@@ -558,18 +584,18 @@ def create_chart(pivot: pd.DataFrame, title: str):
     return chart
 
 
-def chart_png(pivot: pd.DataFrame, title: str) -> BytesIO:
+def chart_png(pivot: pd.DataFrame, title: str, order: List[str] | None = None) -> BytesIO:
     """Return a PNG image buffer for the given pivot chart."""
-    chart = create_chart(pivot, title)
+    chart = create_chart(pivot, title, order=order)
     buf = BytesIO()
     chart.save(buf, format="png")
     buf.seek(0)
     return buf
 
 
-def bar_chart(pivot: pd.DataFrame, title: str) -> BytesIO:
+def bar_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None) -> BytesIO:
     """Display a bar chart and provide PNG/SVG downloads. Returns PNG buffer."""
-    chart = create_chart(pivot, title)
+    chart = create_chart(pivot, title, order=order)
     st.altair_chart(chart, use_container_width=True)
 
     png_buffer = BytesIO()
@@ -1335,7 +1361,7 @@ if file and validate_file(file):
                 pivot = combined_rating_pivot(analysis_df, satisfaction_cols, order=SATISFACTION_ORDER)
                 st.write("### How satisfied were you with the materials you created?")
                 st.dataframe(pivot)
-                chart_buf = bar_chart(pivot, "Satisfaction with Created Materials")
+                chart_buf = bar_chart(pivot, "Satisfaction with Created Materials", order=SATISFACTION_ORDER)
                 c1, c2 = st.columns(2)
                 with c1:
                     download_link(
