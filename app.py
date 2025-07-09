@@ -76,6 +76,29 @@ DEFAULT_FREE_TEXT_COLUMNS = [
     "24: Is there anything else you would like to tell us about your Twinkl experience?",
 ]
 
+# Columns to exclude from structured analysis
+EXCLUDED_STRUCTURED_COLUMNS = [
+    "Date",
+    "Completed",
+    "25.0: User ID",
+    "26.0: t_s_id",
+    "27.0: t_ca_id",
+    "28.0: t_c_id",
+    "29.0: t_co_id",
+    "simplified sub status",
+    "bundle",
+    "career",
+    "career_catergory",
+    "country",
+    "county",
+    "Concatenated",
+    "Translated",
+    "CategoryReasoning",
+    "FinishReason",
+    "Flagged",
+    "ModelTokens",
+]
+
 # Predefined segment configurations used to auto-populate filters
 PREDEFINED_SEGMENTS = {
     "UK Parents": {
@@ -837,12 +860,19 @@ if file and validate_file(file):
         help="These comments will be translated and categorised."
     )
 
+    available_structured = [
+        c
+        for c in df.columns
+        if c not in free_text_cols + [user_id_col, location_col]
+        and c not in EXCLUDED_STRUCTURED_COLUMNS
+    ]
     structured_cols = st.multiselect(
         "Structured question columns",
-        options=[c for c in df.columns if c not in free_text_cols + [user_id_col, location_col]],
-        default=[c for c in df.columns if c not in free_text_cols + [user_id_col, location_col]],
-        help="Responses to these columns will be summarised in pivot tables."
+        options=available_structured,
+        default=available_structured,
+        help="Responses to these columns will be summarised in pivot tables.",
     )
+
 
     preset_name = st.selectbox(
         "Predefined segment (optional)",
