@@ -1050,6 +1050,10 @@ def apply_style():
             .stProgress>div>div>div {
                 background-color: #0E79B2;
             }
+            @media (prefers-color-scheme: dark) {
+                html, body, [class*="css"] { color: #000 !important; }
+                .stButton>button { color: #fff !important; }
+            }
         </style>
         """,
         unsafe_allow_html=True,
