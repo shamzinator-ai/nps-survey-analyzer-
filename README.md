@@ -20,6 +20,7 @@ This repository contains a simple Streamlit application for analyzing NPS survey
 - Progress bars for long-running translation and categorization tasks.
 - Uses OpenAI's async client for faster batch processing.
 - Expandable comments for spot-checking AI results.
+- Modern UI with gradient background and colourful charts.
 - Language detection stored alongside translations.
 - Intermediate results saved after each processing batch.
 - Automatically resume processing from the last completed row on startup.
