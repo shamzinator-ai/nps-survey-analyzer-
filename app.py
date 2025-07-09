@@ -26,6 +26,20 @@ if not openai.api_key:
     st.stop()
 MODEL = "gpt-4o-mini"
 
+# Provide user-friendly messages for common OpenAI errors
+def format_openai_error(e: Exception) -> str:
+    if isinstance(e, openai.AuthenticationError):
+        return "Authentication failed. Check your OPENAI_API_KEY."
+    if isinstance(e, openai.RateLimitError):
+        return "Rate limit exceeded. Please wait and try again."
+    if isinstance(e, openai.APIConnectionError):
+        return "Failed to connect to OpenAI API. Check your network."
+    if isinstance(e, openai.APITimeoutError):
+        return "OpenAI request timed out."
+    if isinstance(e, openai.APIStatusError):
+        return f"OpenAI API error {e.status_code}: {e.message}"
+    return str(e)
+
 # Directory for cached processed data
 CACHE_DIR = "cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -135,7 +149,7 @@ def translate_text(text: str) -> Tuple[str, str]:
     except json.JSONDecodeError as e:
         st.error(f"Failed to parse JSON response: {e}")
     except Exception as e:
-        st.error(f"Translation failed: {e}")
+        st.error(f"Translation failed: {format_openai_error(e)}")
         return text, ""
 
 
@@ -173,7 +187,7 @@ def categorize_text(text: str) -> List[str]:
         st.error(f"Failed to parse JSON response: {e}")
         return []
     except Exception as e:
-        st.error(f"Categorization failed: {e}")
+        st.error(f"Categorization failed: {format_openai_error(e)}")
         return []
 
 
@@ -208,7 +222,7 @@ async def async_translate_batch(texts: List[str]) -> List[Tuple[str, str, int, s
             st.error(f"Failed to parse JSON response: {e}")
             return text, "", 0, ""
         except Exception as e:
-            st.error(f"Translation failed: {e}")
+            st.error(f"Translation failed: {format_openai_error(e)}")
             return text, "", 0, ""
 
     tasks = [asyncio.create_task(_translate(t)) for t in texts]
@@ -256,7 +270,7 @@ async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], str,
             st.error(f"Failed to parse JSON response: {e}")
             return [], "", 0, ""
         except Exception as e:
-            st.error(f"Categorization failed: {e}")
+            st.error(f"Categorization failed: {format_openai_error(e)}")
             return [], "", 0, ""
 
     tasks = [asyncio.create_task(_categorize(t)) for t in texts]
@@ -524,7 +538,7 @@ def generate_report(df: pd.DataFrame) -> str:
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        st.error(f"Report generation failed: {e}")
+        st.error(f"Report generation failed: {format_openai_error(e)}")
         return ""
 
 

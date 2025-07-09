@@ -51,7 +51,9 @@ An example dataset `example_data.csv` is included for testing.
 If the app fails to start or behaves unexpectedly, try the following:
 
 1. **Missing dependencies** – install them with `pip install -r requirements.txt`.
-2. **OpenAI API errors** – ensure the `OPENAI_API_KEY` environment variable is set.
+2. **OpenAI API errors** – ensure the `OPENAI_API_KEY` environment variable is set. The app now
+   shows more descriptive messages for authentication, connection and rate limit
+   issues.
 3. **Large files** – the uploader accepts files up to 10MB.
 4. **Encoding issues** – save your CSV in UTF-8 format.
 
