@@ -165,6 +165,27 @@ MULTISELECT_QUESTION_TEXTS = {
     )
 }
 
+# Rating scale orders used for stacked bar charts and pivots
+RATING_ORDER_EASE = [
+    "Very Hard",
+    "Hard",
+    "Somewhat Hard",
+    "Neutral",
+    "Somewhat Easy",
+    "Easy",
+    "Very Easy",
+]
+
+CONTENT_RATING_ORDER = [
+    "Very Poor",
+    "Poor",
+    "Below Average",
+    "Average",
+    "Above Average",
+    "Good",
+    "Excellent",
+]
+
 # ----------------------------- Utility Functions -----------------------------
 
 def detect_language_offline(text: str) -> str:
@@ -363,17 +384,12 @@ def multiselect_pivot(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
     return pd.concat([pivot, total_row], ignore_index=True)
 
 
-def rating_pivot(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+def rating_pivot(
+    df: pd.DataFrame, columns: List[str], order: List[str] | None = None
+) -> pd.DataFrame:
     """Combine multiple rating columns into a single long-format pivot."""
-    order = [
-        "Very Hard",
-        "Hard",
-        "Somewhat Hard",
-        "Neutral",
-        "Somewhat Easy",
-        "Easy",
-        "Very Easy",
-    ]
+    if order is None:
+        order = RATING_ORDER_EASE
     df_long = df[columns].melt(value_name="Rating", var_name="Aspect").dropna()
     df_long["Aspect"] = df_long["Aspect"].apply(lambda c: re.sub(r"^\d+[\.:]\s*", "", str(c)).strip())
     pivot = df_long.value_counts(["Aspect", "Rating"]).reset_index(name="Count")
@@ -382,17 +398,12 @@ def rating_pivot(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
     return pivot.sort_values(["Aspect", "Rating"]).reset_index(drop=True)
 
 
-def stacked_bar_chart(pivot: pd.DataFrame, title: str) -> BytesIO:
+def stacked_bar_chart(
+    pivot: pd.DataFrame, title: str, order: List[str] | None = None
+) -> BytesIO:
     """Display a stacked bar chart and allow PNG/SVG download."""
-    order = [
-        "Very Hard",
-        "Hard",
-        "Somewhat Hard",
-        "Neutral",
-        "Somewhat Easy",
-        "Easy",
-        "Very Easy",
-    ]
+    if order is None:
+        order = RATING_ORDER_EASE
 
     chart = (
         alt.Chart(pivot, background="white")
@@ -1116,10 +1127,10 @@ if file and validate_file(file):
 
         rating_cols = [c for c in structured_cols if str(c).startswith("6.")]
         if rating_cols:
-            pivot = rating_pivot(analysis_df, rating_cols)
+            pivot = rating_pivot(analysis_df, rating_cols, order=RATING_ORDER_EASE)
             st.write("### Of the following areas, please rate how easy they are to use")
             st.dataframe(pivot)
-            chart_buf = stacked_bar_chart(pivot, "Ease of Use by Area")
+            chart_buf = stacked_bar_chart(pivot, "Ease of Use by Area", order=RATING_ORDER_EASE)
             c1, c2 = st.columns(2)
             with c1:
                 download_link(
@@ -1140,6 +1151,33 @@ if file and validate_file(file):
             zip_entries.append((f"{safe}/table.csv", csv_bytes))
             zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
             processed.update(rating_cols)
+
+        content_rating_cols = [c for c in structured_cols if str(c).startswith("8.")]
+        if content_rating_cols:
+            pivot = rating_pivot(analysis_df, content_rating_cols, order=CONTENT_RATING_ORDER)
+            st.write("### Please rate the following about our content")
+            st.dataframe(pivot)
+            chart_buf = stacked_bar_chart(pivot, "Content Ratings", order=CONTENT_RATING_ORDER)
+            c1, c2 = st.columns(2)
+            with c1:
+                download_link(
+                    pivot,
+                    "pivot_q8.csv",
+                    "Download Question 8 CSV",
+                    help="Download the pivot table as a CSV file.",
+                )
+            with c2:
+                export_excel(
+                    pivot,
+                    "pivot_q8.xlsx",
+                    "Download Question 8 Excel",
+                    help="Download the pivot table as an Excel file."
+                )
+            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+            safe = safe_name("question_8")
+            zip_entries.append((f"{safe}/table.csv", csv_bytes))
+            zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+            processed.update(content_rating_cols)
 
         for prefix, cols in groups.items():
             question = MULTISELECT_QUESTION_TEXTS.get(prefix, f"Question {prefix}")
