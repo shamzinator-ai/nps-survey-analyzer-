@@ -917,6 +917,18 @@ if file and validate_file(file):
         df = df_to_process
 
         st.success("Processing complete")
+        download_link(
+            df,
+            "full_results.csv",
+            "Download All Results",
+            help="Save the enriched data with translations and categories.",
+        )
+        export_full_excel(
+            df,
+            "full_results.xlsx",
+            "Download All Results Excel",
+            help="Save the enriched data as an Excel file.",
+        )
 
         df = review_translations(df, user_id_col)
         st.session_state["processed_df"] = df
@@ -946,7 +958,7 @@ if file and validate_file(file):
                     pivot,
                     f"pivot_{col}.csv",
                     f"Download {col} CSV",
-                    help="Download the pivot table as a CSV file."
+                    help="Download the pivot table as a CSV file.",
                 )
             with c2:
                 export_excel(
@@ -977,18 +989,6 @@ if file and validate_file(file):
             for _, row in sample.iterrows():
                 st.write(f"**User {row[user_id_col]}** - {row['Categories']}")
                 st.write(row['Translated'])
-        download_link(
-            analysis_df,
-            "full_results.csv",
-            "Download All Results",
-            help="Save the full dataset with translations and categories."
-        )
-        export_full_excel(
-            analysis_df,
-            "full_results.xlsx",
-            "Download All Results Excel",
-            help="Save the full dataset as an Excel file."
-        )
 
         if st.button(
             "Generate Report",
