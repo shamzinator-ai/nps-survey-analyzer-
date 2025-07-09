@@ -43,6 +43,7 @@ if not openai.api_key:
         st.stop()
 MODEL = "gpt-4o-mini"
 
+
 # Provide user-friendly messages for common OpenAI errors
 def format_openai_error(e: Exception) -> str:
     if DEBUG:
@@ -61,20 +62,52 @@ def format_openai_error(e: Exception) -> str:
         return f"OpenAI API error {e.status_code}: {e.message}"
     return str(e)
 
+
 # Directory for cached processed data
 CACHE_DIR = "cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 CATEGORIES = [
-    "Search/Navigation", "Resource Mention", "User Question", "Translation Mention",
-    "User Suggestion", "Pain Point", "AI", "Competitor", "Site Error", "Social Media",
-    "Phonics", "Price Mention", "Accidental Purchase", "Resource Preview",
-    "Resource Request", "Editing/Adapting Resource", "Resource Quality", "EDI", "SEND",
-    "Partnership", "Parental Leave", "Email", "Email Verification", "Not Used Enough",
-    "Legal", "Glassdoor", "GDPR", "Free Resources", "Download Issues", "Content Errors",
-    "Account Access", "Already Cancelled", "Auto-renewal", "Book Club",
-    "Cancellation Difficulty", "CS General", "CS Negative", "CS Positive",
-    "Negative Words", "Positive Words"
+    "Search/Navigation",
+    "Resource Mention",
+    "User Question",
+    "Translation Mention",
+    "User Suggestion",
+    "Pain Point",
+    "AI",
+    "Competitor",
+    "Site Error",
+    "Social Media",
+    "Phonics",
+    "Price Mention",
+    "Accidental Purchase",
+    "Resource Preview",
+    "Resource Request",
+    "Editing/Adapting Resource",
+    "Resource Quality",
+    "EDI",
+    "SEND",
+    "Partnership",
+    "Parental Leave",
+    "Email",
+    "Email Verification",
+    "Not Used Enough",
+    "Legal",
+    "Glassdoor",
+    "GDPR",
+    "Free Resources",
+    "Download Issues",
+    "Content Errors",
+    "Account Access",
+    "Already Cancelled",
+    "Auto-renewal",
+    "Book Club",
+    "Cancellation Difficulty",
+    "CS General",
+    "CS Negative",
+    "CS Positive",
+    "Negative Words",
+    "Positive Words",
 ]
 
 # Default column names for common Twinkl survey exports
@@ -179,10 +212,7 @@ MULTISELECT_QUESTION_TEXTS = {
         "Please select which areas you wish to give feedback on. "
         "Your time is valuable so we'll only ask questions about these topics."
     ),
-    "11": (
-        "Have you ever created your own content on the website? "
-        "(Choose all that apply)"
-    ),
+    "11": ("Have you ever created your own content on the website? " "(Choose all that apply)"),
 }
 
 # Rating scale orders used for stacked bar charts and pivots
@@ -226,21 +256,27 @@ IMPORTANCE_ORDER = [
     "5 - Very important",
 ]
 
+# Generic numeric 1-5 order used when the data contains only numbers
+IMPORTANCE_ORDER_NUMERIC = ["1", "2", "3", "4", "5"]
+
 # Color palettes for rating scales: negatives=pink, neutral=yellow, positives=blue
 NEGATIVE_COLORS = ["#ffb3c6", "#ff7aa9", "#ff4d94"]
 NEUTRAL_COLOR = "#ffd966"
 POSITIVE_COLORS = ["#99cfff", "#66b2ff", "#3399ff"]
 
+
 def rating_colors(order: List[str]) -> List[str]:
     """Return a color palette matching the given rating order."""
     if order in (RATING_ORDER_EASE, CONTENT_RATING_ORDER, SATISFACTION_ORDER):
         return NEGATIVE_COLORS + [NEUTRAL_COLOR] + POSITIVE_COLORS
-    if order == IMPORTANCE_ORDER:
+    if order in (IMPORTANCE_ORDER, IMPORTANCE_ORDER_NUMERIC):
         return NEGATIVE_COLORS[1:] + [NEUTRAL_COLOR] + POSITIVE_COLORS[1:]
     # Fallback gradient
     return ["#ff66b3", "#3399ff"]
 
+
 # ----------------------------- Utility Functions -----------------------------
+
 
 def detect_language_offline(text: str) -> str:
     """Detect language locally using langdetect."""
@@ -248,6 +284,7 @@ def detect_language_offline(text: str) -> str:
         return detect(text)
     except LangDetectException:
         return ""
+
 
 @st.cache_data(show_spinner=False)
 def translate_text(text: str) -> Tuple[str, str]:
@@ -309,7 +346,7 @@ def categorize_text(text: str) -> List[str]:
         categories_raw = data.get("categories", "")
         if categories_raw.lower() == "none":
             return []
-        return [c.strip() for c in categories_raw.split(',')]
+        return [c.strip() for c in categories_raw.split(",")]
     except json.JSONDecodeError as e:
         st.error(f"Failed to parse JSON response: {e}")
         return []
@@ -398,7 +435,7 @@ async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], str,
             finish = response.choices[0].finish_reason or ""
             if categories_raw.lower() == "none":
                 return [], reasoning, tokens, finish
-            categories = [c.strip() for c in categories_raw.split(',')]
+            categories = [c.strip() for c in categories_raw.split(",")]
             return categories, reasoning, tokens, finish
         except json.JSONDecodeError as e:
             st.error(f"Failed to parse JSON response: {e}")
@@ -436,7 +473,9 @@ def multiselect_pivot(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
     pivot = pd.DataFrame(rows)
     total = pivot["Count"].sum()
     pivot["Percent"] = (pivot["Count"] / total * 100).round(1) if total else 0
-    total_row = pd.DataFrame({"Response": ["Total"], "Count": [total], "Percent": [100.0 if total else 0.0]})
+    total_row = pd.DataFrame(
+        {"Response": ["Total"], "Count": [total], "Percent": [100.0 if total else 0.0]}
+    )
     return pd.concat([pivot, total_row], ignore_index=True)
 
 
@@ -447,6 +486,9 @@ def rating_pivot(
     if order is None:
         order = RATING_ORDER_EASE
     df_long = df[columns].melt(value_name="Rating", var_name="Aspect").dropna()
+    df_long["Rating"] = (
+        df_long["Rating"].apply(lambda x: str(x).strip()).str.replace(r"\.0$", "", regex=True)
+    )
     df_long["Aspect"] = df_long["Aspect"].apply(
         lambda c: re.sub(r"^\d+[\.:]\s*", "", str(c)).split(":")[-1].strip()
     )
@@ -466,7 +508,13 @@ def combined_rating_pivot(
         return pd.DataFrame(columns=["Response", "Count", "Percent"])
     if order is None:
         order = SATISFACTION_ORDER
-    ratings = df[columns].melt(value_name="Response")["Response"].dropna()
+    ratings = (
+        df[columns]
+        .melt(value_name="Response")["Response"]
+        .dropna()
+        .apply(lambda x: str(x).strip())
+        .str.replace(r"\.0$", "", regex=True)
+    )
     pivot = ratings.value_counts().reset_index()
     pivot.columns = ["Response", "Count"]
     total = pivot["Count"].sum()
@@ -477,9 +525,7 @@ def combined_rating_pivot(
     return pd.concat([pivot, total_row], ignore_index=True)
 
 
-def stacked_bar_chart(
-    pivot: pd.DataFrame, title: str, order: List[str] | None = None
-) -> BytesIO:
+def stacked_bar_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None) -> BytesIO:
     """Display a stacked bar chart and allow PNG/SVG download."""
     if order is None:
         order = RATING_ORDER_EASE
@@ -510,7 +556,7 @@ def stacked_bar_chart(
                 sort=order,
                 scale=alt.Scale(domain=order, range=rating_colors(order)),
             ),
-            tooltip=["Rating", "Count"]
+            tooltip=["Rating", "Count"],
         )
         .properties(title=f"{title} \U0001F4CA", height=300)
         .configure_title(fontSize=22)
@@ -559,9 +605,7 @@ def create_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None
         # Pre-wrap labels to avoid using JavaScript expressions which can fail
         # during PNG conversion in vl-convert. Replace spaces with newline
         # characters before plotting.
-        pivot["Response_wrapped"] = (
-            pivot["Response"].astype(str).str.replace(" ", "\n")
-        )
+        pivot["Response_wrapped"] = pivot["Response"].astype(str).str.replace(" ", "\n")
 
     enc_color = alt.Color(
         "Count:Q",
@@ -724,12 +768,12 @@ def display_summary(df: pd.DataFrame, nps_col: str | None):
 
 
 def download_link(df: pd.DataFrame, filename: str, label: str, help: str | None = None):
-    csv = df.to_csv(index=False).encode('utf-8')
+    csv = df.to_csv(index=False).encode("utf-8")
     st.download_button(
         label,
         csv,
         file_name=filename,
-        mime='text/csv',
+        mime="text/csv",
         help=help,
         key=unique_key(filename),
     )
@@ -782,6 +826,7 @@ def read_uploaded_file(uploaded_file) -> pd.DataFrame | None:
         st.error(f"Failed to read file: {e}")
     return None
 
+
 def validate_file(uploaded_file) -> bool:
     """Basic checks for uploaded file size and type."""
     max_size = 10 * 1024 * 1024  # 10MB
@@ -791,8 +836,9 @@ def validate_file(uploaded_file) -> bool:
     return True
 
 
-def validate_columns(user_id_col: str, location_col: str,
-                     free_text_cols: List[str], structured_cols: List[str]) -> bool:
+def validate_columns(
+    user_id_col: str, location_col: str, free_text_cols: List[str], structured_cols: List[str]
+) -> bool:
     """Ensure mandatory columns are selected."""
     errors = []
     if not user_id_col:
@@ -827,16 +873,21 @@ def review_translations(df: pd.DataFrame, id_col: str) -> pd.DataFrame:
             if show_reasoning and row.get("CategoryReasoning"):
                 st.write("**Reasoning:**", row["CategoryReasoning"])
             new_trans = st.text_area(
-                "Translated", value=row["Translated"], key=f"trans_{idx}",
-                help="Edit the AI translation if it looks incorrect.")
+                "Translated",
+                value=row["Translated"],
+                key=f"trans_{idx}",
+                help="Edit the AI translation if it looks incorrect.",
+            )
             new_cats = st.multiselect(
-                "Categories", options=CATEGORIES,
-                default=[c.strip() for c in row["Categories"].split(',') if c],
+                "Categories",
+                options=CATEGORIES,
+                default=[c.strip() for c in row["Categories"].split(",") if c],
                 key=f"cat_{idx}",
-                help="Add or remove categories for this comment.")
+                help="Add or remove categories for this comment.",
+            )
             flag = st.checkbox(
-                "Flag for review", key=f"flag_{idx}",
-                help="Mark this comment for manual follow-up.")
+                "Flag for review", key=f"flag_{idx}", help="Mark this comment for manual follow-up."
+            )
             df.at[idx, "Translated"] = new_trans
             df.at[idx, "Categories"] = ", ".join(new_cats)
             flags.append(flag)
@@ -868,8 +919,10 @@ def generate_report(df: pd.DataFrame) -> str:
     try:
         response = openai.chat.completions.create(
             model=MODEL,
-            messages=[{"role": "system", "content": prompt},
-                      {"role": "user", "content": user_content}],
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_content},
+            ],
             temperature=0.3,
         )
         return response.choices[0].message.content.strip()
@@ -946,9 +999,7 @@ def save_pdf(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
     return bio
 
 
-def process_free_text(
-    df: pd.DataFrame, free_text_cols: List[str], cache_path: str
-) -> pd.DataFrame:
+def process_free_text(df: pd.DataFrame, free_text_cols: List[str], cache_path: str) -> pd.DataFrame:
     """Concatenate, translate and categorize free-text columns with progress.
 
     The function saves intermediate results to ``cache_path`` with a ``_partial``
@@ -957,9 +1008,7 @@ def process_free_text(
     """
 
     concat_series = (
-        df[free_text_cols]
-        .fillna("")
-        .apply(lambda r: " ".join(str(x) for x in r), axis=1)
+        df[free_text_cols].fillna("").apply(lambda r: " ".join(str(x) for x in r), axis=1)
     )
     df["Concatenated"] = concat_series
 
@@ -1027,6 +1076,7 @@ def process_free_text(
 
     progress.empty()
     return df
+
 
 # ----------------------------- Streamlit App -----------------------------
 
@@ -1107,11 +1157,12 @@ else:
 st.title("NPS Survey Analyzer")
 
 st.sidebar.header("1. Upload Survey Data")
-st.sidebar.markdown(
-    "🔗 [Troubleshooting guide](README.md#troubleshooting)")
+st.sidebar.markdown("🔗 [Troubleshooting guide](README.md#troubleshooting)")
 file = st.sidebar.file_uploader(
-    "Upload CSV, XLS or XLSX", type=["csv", "xls", "xlsx"], key="data_file",
-    help="File must include a unique ID, location, at least one structured and one free-text column."
+    "Upload CSV, XLS or XLSX",
+    type=["csv", "xls", "xlsx"],
+    key="data_file",
+    help="File must include a unique ID, location, at least one structured and one free-text column.",
 )
 
 if file is not None:
@@ -1163,26 +1214,22 @@ if file and validate_file(file):
     st.write("**Columns:**", ", ".join(df.columns))
 
     user_id_default = (
-        df.columns.get_loc(DEFAULT_USER_ID_COLUMN)
-        if DEFAULT_USER_ID_COLUMN in df.columns
-        else 0
+        df.columns.get_loc(DEFAULT_USER_ID_COLUMN) if DEFAULT_USER_ID_COLUMN in df.columns else 0
     )
     user_id_col = st.selectbox(
         "Column with User ID",
         options=df.columns,
         index=user_id_default,
-        help="Select the column that uniquely identifies each user."
+        help="Select the column that uniquely identifies each user.",
     )
     location_default = (
-        df.columns.get_loc(DEFAULT_LOCATION_COLUMN)
-        if DEFAULT_LOCATION_COLUMN in df.columns
-        else 0
+        df.columns.get_loc(DEFAULT_LOCATION_COLUMN) if DEFAULT_LOCATION_COLUMN in df.columns else 0
     )
     location_col = st.selectbox(
         "Column with County/Location",
         options=df.columns,
         index=location_default,
-        help="Pick the column that indicates user location or segment."
+        help="Pick the column that indicates user location or segment.",
     )
 
     ft_options = [c for c in df.columns if c not in [user_id_col, location_col]]
@@ -1191,7 +1238,7 @@ if file and validate_file(file):
         "Free-text response columns",
         options=ft_options,
         default=ft_default,
-        help="These comments will be translated and categorised."
+        help="These comments will be translated and categorised.",
     )
 
     available_structured = [
@@ -1211,11 +1258,10 @@ if file and validate_file(file):
     # Skip any columns accidentally selected that contain 'Unnamed'
     structured_cols = [c for c in structured_cols if "unnamed" not in str(c).lower()]
 
-
     preset_name = st.selectbox(
         "Predefined segment (optional)",
         ["None"] + list(PREDEFINED_SEGMENTS.keys()),
-        help="Automatically populate filters for common segments."
+        help="Automatically populate filters for common segments.",
     )
     preset = PREDEFINED_SEGMENTS.get(preset_name)
 
@@ -1227,10 +1273,12 @@ if file and validate_file(file):
         "Filter by segment (optional)",
         options=segment_options,
         default=preset_segments,
-        help="Choose segments to focus on or leave empty for all."
+        help="Choose segments to focus on or leave empty for all.",
     )
 
-    filter_col_options = [c for c in df.columns if c not in free_text_cols + [user_id_col, location_col]]
+    filter_col_options = [
+        c for c in df.columns if c not in free_text_cols + [user_id_col, location_col]
+    ]
     preset_filter_cols = []
     if preset:
         preset_filter_cols = [c for c in preset.get("filters", {}) if c in filter_col_options]
@@ -1238,7 +1286,7 @@ if file and validate_file(file):
         "Additional segment columns to filter (optional)",
         options=filter_col_options,
         default=preset_filter_cols,
-        help="Select other columns like career type to filter by."
+        help="Select other columns like career type to filter by.",
     )
 
     addl_filters = {}
@@ -1274,8 +1322,7 @@ if file and validate_file(file):
     )
 
     if st.button(
-        "Process Data",
-        help="Translate comments, categorise them and generate summaries."
+        "Process Data", help="Translate comments, categorise them and generate summaries."
     ):
         if not validate_columns(
             user_id_col,
@@ -1315,9 +1362,7 @@ if file and validate_file(file):
             )
 
             if show_comments:
-                processed_subset = review_translations(
-                    processed_subset, user_id_col
-                )
+                processed_subset = review_translations(processed_subset, user_id_col)
             # Persist edits back into the full DataFrame and cache
             df.update(processed_subset)
             st.session_state["processed_df"] = df
@@ -1331,8 +1376,7 @@ if file and validate_file(file):
             (
                 c
                 for c in structured_cols
-                if "nps" in c.lower()
-                or "how likely are you to recommend" in str(c).lower()
+                if "nps" in c.lower() or "how likely are you to recommend" in str(c).lower()
             ),
             None,
         )
@@ -1345,10 +1389,9 @@ if file and validate_file(file):
 
         display_summary(analysis_df, nps_col)
         if analysis_mode != "Free Text Only":
-    
             st.subheader("Structured Data Analysis")
             zip_entries: list[tuple[str, bytes]] = []
-    
+
             # Identify multi-select question groups by numeric prefix
             pattern = re.compile(r"^(\d+)[\.:]")
             groups: dict[str, list[str]] = {}
@@ -1356,7 +1399,7 @@ if file and validate_file(file):
                 m = pattern.match(str(col))
                 if m:
                     groups.setdefault(m.group(1), []).append(col)
-    
+
             # Filter groups to only binary multi-select columns
             groups = {
                 k: v
@@ -1374,14 +1417,10 @@ if file and validate_file(file):
                     for c in v
                 )
             }
-    
+
             processed: set[str] = set()
-    
-            ease_cols = [
-                c
-                for c in structured_cols
-                if re.match(r"^(6|14)[\.:]", str(c))
-            ]
+
+            ease_cols = [c for c in structured_cols if re.match(r"^(6|14)[\.:]", str(c))]
             if ease_cols:
                 pivot = rating_pivot(analysis_df, ease_cols, order=RATING_ORDER_EASE)
                 st.write("### Of the following areas, please rate how easy they were to use")
@@ -1400,14 +1439,14 @@ if file and validate_file(file):
                         pivot,
                         "pivot_ease.xlsx",
                         "Download Ease Question Excel",
-                        help="Download the pivot table as an Excel file."
+                        help="Download the pivot table as an Excel file.",
                     )
                 csv_bytes = pivot.to_csv(index=False).encode("utf-8")
                 safe = safe_name("question_ease")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
                 processed.update(ease_cols)
-    
+
             content_rating_cols = [c for c in structured_cols if str(c).startswith("8.")]
             if content_rating_cols:
                 pivot = rating_pivot(analysis_df, content_rating_cols, order=CONTENT_RATING_ORDER)
@@ -1427,20 +1466,24 @@ if file and validate_file(file):
                         pivot,
                         "pivot_q8.xlsx",
                         "Download Question 8 Excel",
-                        help="Download the pivot table as an Excel file."
+                        help="Download the pivot table as an Excel file.",
                     )
                 csv_bytes = pivot.to_csv(index=False).encode("utf-8")
                 safe = safe_name("question_8")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
                 processed.update(content_rating_cols)
-    
+
             satisfaction_cols = [c for c in structured_cols if str(c).startswith("12.")]
             if satisfaction_cols:
-                pivot = combined_rating_pivot(analysis_df, satisfaction_cols, order=SATISFACTION_ORDER)
+                pivot = combined_rating_pivot(
+                    analysis_df, satisfaction_cols, order=SATISFACTION_ORDER
+                )
                 st.write("### How satisfied were you with the materials you created?")
                 st.dataframe(pivot)
-                chart_buf = bar_chart(pivot, "Satisfaction with Created Materials", order=SATISFACTION_ORDER)
+                chart_buf = bar_chart(
+                    pivot, "Satisfaction with Created Materials", order=SATISFACTION_ORDER
+                )
                 c1, c2 = st.columns(2)
                 with c1:
                     download_link(
@@ -1454,20 +1497,32 @@ if file and validate_file(file):
                         pivot,
                         "pivot_q12.xlsx",
                         "Download Question 12 Excel",
-                        help="Download the pivot table as an Excel file."
+                        help="Download the pivot table as an Excel file.",
                     )
                 csv_bytes = pivot.to_csv(index=False).encode("utf-8")
                 safe = safe_name("question_12")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
                 processed.update(satisfaction_cols)
-    
+
             importance_cols = [c for c in structured_cols if re.match(r"^21[\.:]", str(c))]
             if importance_cols:
-                pivot = rating_pivot(analysis_df, importance_cols, order=IMPORTANCE_ORDER)
+                vals = (
+                    analysis_df[importance_cols]
+                    .stack()
+                    .dropna()
+                    .astype(str)
+                    .str.strip()
+                    .str.replace(r"\.0$", "", regex=True)
+                )
+                if not vals.empty and vals.str.fullmatch(r"[1-5]").all():
+                    imp_order = IMPORTANCE_ORDER_NUMERIC
+                else:
+                    imp_order = IMPORTANCE_ORDER
+                pivot = rating_pivot(analysis_df, importance_cols, order=imp_order)
                 st.write("### Tell us how important the following are to you")
                 st.dataframe(pivot)
-                chart_buf = stacked_bar_chart(pivot, "Importance Ratings", order=IMPORTANCE_ORDER)
+                chart_buf = stacked_bar_chart(pivot, "Importance Ratings", order=imp_order)
                 c1, c2 = st.columns(2)
                 with c1:
                     download_link(
@@ -1487,7 +1542,7 @@ if file and validate_file(file):
                 safe = safe_name("question_21")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-    
+
             for prefix, cols in groups.items():
                 question = MULTISELECT_QUESTION_TEXTS.get(prefix, f"Question {prefix}")
                 pivot = multiselect_pivot(analysis_df, cols)
@@ -1507,14 +1562,14 @@ if file and validate_file(file):
                         pivot,
                         f"pivot_q{prefix}.xlsx",
                         f"Download Question {prefix} Excel",
-                        help="Download the pivot table as an Excel file."
+                        help="Download the pivot table as an Excel file.",
                     )
                 csv_bytes = pivot.to_csv(index=False).encode("utf-8")
                 safe = safe_name(f"question_{prefix}")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
                 processed.update(cols)
-    
+
             for col in structured_cols:
                 if col in processed:
                     continue
@@ -1535,13 +1590,13 @@ if file and validate_file(file):
                         pivot,
                         f"pivot_{col}.xlsx",
                         f"Download {col} Excel",
-                        help="Download the pivot table as an Excel file."
+                        help="Download the pivot table as an Excel file.",
                     )
                 csv_bytes = pivot.to_csv(index=False).encode("utf-8")
                 safe = safe_name(col)
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-    
+
             if zip_entries:
                 zip_buf = BytesIO()
                 with zipfile.ZipFile(zip_buf, "w") as zipf:
@@ -1561,28 +1616,24 @@ if file and validate_file(file):
             display_cols = [
                 user_id_col,
                 location_col,
-                'Concatenated',
-                'Translated',
-                'Language',
-                'Categories',
-                'ModelTokens',
-                'FinishReason',
-                'Flagged',
+                "Concatenated",
+                "Translated",
+                "Language",
+                "Categories",
+                "ModelTokens",
+                "FinishReason",
+                "Flagged",
             ]
             st.dataframe(analysis_df[display_cols])
             if st.button(
-                "Spot-check 5 Random Comments",
-                help="Preview a random sample to verify AI results."
+                "Spot-check 5 Random Comments", help="Preview a random sample to verify AI results."
             ):
                 sample = analysis_df.sample(min(5, len(analysis_df)))
                 for _, row in sample.iterrows():
                     st.write(f"**User {row[user_id_col]}** - {row['Categories']}")
-                    st.write(row['Translated'])
-    
-            if st.button(
-                "Generate Report",
-                help="Create a narrative summary of all findings."
-            ):
+                    st.write(row["Translated"])
+
+            if st.button("Generate Report", help="Create a narrative summary of all findings."):
                 segments_to_process = selected_segments if selected_segments else [None]
                 zip_buffer = BytesIO()
                 with zipfile.ZipFile(zip_buffer, "w") as zipf:
@@ -1605,8 +1656,12 @@ if file and validate_file(file):
                         st.dataframe(cat_pivot)
                         bar_chart(cat_pivot, f"{segment_title} Category Frequency")
                         st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
-    
-                        report_text = generate_report(seg_df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
+
+                        report_text = generate_report(
+                            seg_df[
+                                [user_id_col, location_col, "Translated", "Categories", "Flagged"]
+                            ]
+                        )
                         if not report_text:
                             continue
                         st.markdown(f"## Report for {segment_title}")
