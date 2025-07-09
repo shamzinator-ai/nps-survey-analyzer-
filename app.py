@@ -484,7 +484,7 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFra
 
         trans_lang = asyncio.run(async_translate_batch(batch_texts))
         batch_trans = [t for t, _, _, _ in trans_lang]
-        batch_langs = [l for _, l, _, _ in trans_lang]
+        batch_langs = [lang for _, lang, _, _ in trans_lang]
         batch_toks_trans = [tok for _, _, tok, _ in trans_lang]
         batch_finish_trans = [fin for _, _, _, fin in trans_lang]
 
