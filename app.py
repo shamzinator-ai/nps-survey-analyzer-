@@ -431,6 +431,78 @@ def bar_chart(pivot: pd.DataFrame, title: str) -> BytesIO:
 
     return png_buffer
 
+# --- Likert (rating scale) utilities ---
+LIKERT_OPTIONS = [
+    "Very Poor",
+    "Poor",
+    "Below Average",
+    "Average",
+    "Above Average",
+    "Good",
+    "Excellent",
+]
+
+LIKERT_QUESTION_TEXTS = {
+    "8": "Please rate the following about our content (Please only rate the areas that are relevant to you)",
+}
+
+def likert_pivot(df: pd.DataFrame, columns: List[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return long-format counts and a wide table for rating scale questions."""
+    def clean(col: str) -> str:
+        col = re.sub(r"^[0-9]+(?:\.[0-9]+)?[:\.]*\s*", "", col)
+        col = col.replace("Please rate the following::", "").strip()
+        return col
+
+    melted = df[columns].melt(value_vars=columns, var_name="Aspect", value_name="Rating").dropna()
+    melted["Aspect"] = melted["Aspect"].apply(clean)
+    pivot_long = (
+        melted.groupby(["Aspect", "Rating"]).size().reset_index(name="Count")
+    )
+    pivot_long["Percent"] = pivot_long.groupby("Aspect")["Count"].transform(lambda x: (x / x.sum() * 100).round(1))
+    table = pivot_long.pivot(index="Aspect", columns="Rating", values="Count").fillna(0)
+    table = table.reindex(columns=LIKERT_OPTIONS).reset_index()
+    return pivot_long, table
+
+
+def stacked_bar_chart(pivot_long: pd.DataFrame, title: str) -> BytesIO:
+    """Display a stacked bar chart for rating scale questions."""
+    chart = (
+        alt.Chart(pivot_long)
+        .mark_bar()
+        .encode(
+            y=alt.Y("Aspect:N", title="Aspect"),
+            x=alt.X("Percent:Q", stack="normalize", title="Percent"),
+            color=alt.Color("Rating:N", sort=LIKERT_OPTIONS),
+            tooltip=["Aspect", "Rating", "Count", "Percent"],
+        )
+        .properties(title=f"{title} 📊", height=300)
+        .configure_title(fontSize=22)
+        .configure_axis(labelFontSize=16, titleFontSize=18)
+    )
+    st.altair_chart(chart, use_container_width=True)
+    png_buffer = BytesIO()
+    chart.save(png_buffer, format="png")
+    png_buffer.seek(0)
+    svg_buffer = StringIO()
+    chart.save(svg_buffer, format="svg")
+    svg_bytes = svg_buffer.getvalue().encode("utf-8")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            "Download Chart PNG",
+            png_buffer,
+            file_name=f"{title}.png",
+            mime="image/png",
+        )
+    with col2:
+        st.download_button(
+            "Download Chart SVG",
+            svg_bytes,
+            file_name=f"{title}.svg",
+            mime="image/svg+xml",
+        )
+    return png_buffer
+
 
 def safe_name(name: str) -> str:
     """Return a filesystem-friendly version of a name."""
@@ -1023,18 +1095,18 @@ if file and validate_file(file):
         st.subheader("Structured Data Analysis")
         zip_entries: list[tuple[str, bytes]] = []
 
-        # Identify multi-select question groups by numeric prefix
+        # Identify question groups by numeric prefix
         pattern = re.compile(r"^(\d+)[\.:]")
-        groups: dict[str, list[str]] = {}
+        prefix_groups: dict[str, list[str]] = {}
         for col in structured_cols:
             m = pattern.match(str(col))
             if m:
-                groups.setdefault(m.group(1), []).append(col)
+                prefix_groups.setdefault(m.group(1), []).append(col)
 
-        # Filter groups to only binary multi-select columns
-        groups = {
+        # Multi-select groups (binary)
+        multiselect_groups = {
             k: v
-            for k, v in groups.items()
+            for k, v in prefix_groups.items()
             if len(v) > 1
             and all(
                 set(str(x).strip() for x in analysis_df[c].dropna().unique()) <= {"0", "1"}
@@ -1042,9 +1114,21 @@ if file and validate_file(file):
             )
         }
 
+        # Likert rating groups
+        likert_groups = {
+            k: v
+            for k, v in prefix_groups.items()
+            if len(v) > 1
+            and k not in multiselect_groups
+            and all(
+                set(str(x).strip() for x in analysis_df[c].dropna().unique()) <= set(LIKERT_OPTIONS)
+                for c in v
+            )
+        }
+
         processed: set[str] = set()
 
-        for prefix, cols in groups.items():
+        for prefix, cols in multiselect_groups.items():
             question = MULTISELECT_QUESTION_TEXTS.get(prefix, f"Question {prefix}")
             pivot = multiselect_pivot(analysis_df, cols)
             st.write(f"### {question}")
@@ -1066,6 +1150,33 @@ if file and validate_file(file):
                     help="Download the pivot table as an Excel file."
                 )
             csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+            safe = safe_name(f"question_{prefix}")
+            zip_entries.append((f"{safe}/table.csv", csv_bytes))
+            zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+            processed.update(cols)
+
+        for prefix, cols in likert_groups.items():
+            question = LIKERT_QUESTION_TEXTS.get(prefix, f"Question {prefix}")
+            pivot_long, table = likert_pivot(analysis_df, cols)
+            st.write(f"### {question}")
+            st.dataframe(table)
+            chart_buf = stacked_bar_chart(pivot_long, f"{question} Responses")
+            c1, c2 = st.columns(2)
+            with c1:
+                download_link(
+                    table,
+                    f"pivot_q{prefix}.csv",
+                    f"Download Question {prefix} CSV",
+                    help="Download the pivot table as a CSV file.",
+                )
+            with c2:
+                export_excel(
+                    table,
+                    f"pivot_q{prefix}.xlsx",
+                    f"Download Question {prefix} Excel",
+                    help="Download the pivot table as an Excel file.",
+                )
+            csv_bytes = table.to_csv(index=False).encode("utf-8")
             safe = safe_name(f"question_{prefix}")
             zip_entries.append((f"{safe}/table.csv", csv_bytes))
             zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
