@@ -346,6 +346,9 @@ def create_chart(pivot: pd.DataFrame, title: str):
 
     # Ensure the expected column name exists for the X encoding.
     pivot = pivot.rename(columns={"Category": "Response"})
+    # Remove any total row so it doesn't appear as its own bar
+    if "Response" in pivot.columns:
+        pivot = pivot[pivot["Response"] != "Total"]
 
     chart = (
         alt.Chart(pivot, background="white")
