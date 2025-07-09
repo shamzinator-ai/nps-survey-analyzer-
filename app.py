@@ -640,6 +640,7 @@ def compute_kpis(
 def display_summary(df: pd.DataFrame, nps_col: str | None):
     """Show high-level KPIs and charts."""
     st.subheader("🚀 High-Level KPIs")
+    st.metric("Rows After Filters", len(df))
     nps_pivot, cat_pivot, (pos, neg), nps_score = compute_kpis(df, nps_col)
     if nps_score is not None:
         st.metric("NPS Score", nps_score)
@@ -1459,8 +1460,9 @@ if file and validate_file(file):
                         if seg_df.empty:
                             continue
                         segment_title = segment if segment is not None else "All"
-    
+
                         st.markdown(f"## KPIs for {segment_title}")
+                        st.metric("Rows in Segment", len(seg_df))
                         nps_pivot, cat_pivot, (pos, neg), nps_score = compute_kpis(seg_df, nps_col)
                         if nps_score is not None:
                             st.metric("NPS Score", nps_score)
