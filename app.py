@@ -471,8 +471,21 @@ def stacked_bar_chart(
         alt.Chart(pivot, background="white")
         .mark_bar()
         .encode(
-            x=alt.X("Aspect:N", title="Aspect"),
-            y=alt.Y("Count:Q", stack="normalize", axis=alt.Axis(format="%"), title="Percent"),
+            x=alt.X(
+                "Aspect:N",
+                title="Aspect",
+                axis=alt.Axis(
+                    labelAngle=0,
+                    labelExpr="datum.label.split(' ').join('\n')",
+                    labelLimit=200,
+                ),
+            ),
+            y=alt.Y(
+                "Count:Q",
+                stack="normalize",
+                axis=alt.Axis(format="%"),
+                title="Percent",
+            ),
             color=alt.Color("Rating:N", sort=order),
             tooltip=["Rating", "Count"]
         )
@@ -520,7 +533,16 @@ def create_chart(pivot: pd.DataFrame, title: str):
         alt.Chart(pivot, background="white")
         .mark_bar()
         .encode(
-            x=alt.X("Response:N", sort="-y", title="Response"),
+            x=alt.X(
+                "Response:N",
+                sort="-y",
+                title="Response",
+                axis=alt.Axis(
+                    labelAngle=0,
+                    labelExpr="datum.label.split(' ').join('\n')",
+                    labelLimit=200,
+                ),
+            ),
             y=alt.Y("Count:Q", title="Count"),
             color=alt.Color(
                 "Count:Q",
