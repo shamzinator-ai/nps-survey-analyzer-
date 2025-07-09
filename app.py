@@ -598,7 +598,8 @@ file = st.sidebar.file_uploader(
 
 if file and validate_file(file):
     raw_bytes = file.getvalue()
-    checksum = hashlib.md5(raw_bytes).hexdigest()
+    # Use SHA-256 rather than MD5 to generate a cache key for the uploaded file
+    checksum = hashlib.sha256(raw_bytes).hexdigest()
     cache_path = os.path.join(CACHE_DIR, f"{checksum}.pkl")
     partial_path = os.path.join(CACHE_DIR, f"{checksum}_partial.pkl")
     if "processed_df" in st.session_state:
