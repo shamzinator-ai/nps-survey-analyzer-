@@ -951,9 +951,11 @@ if file and validate_file(file):
             df_to_process = df_to_process[df_to_process[col].isin(vals)]
 
         with st.spinner("Processing free-text responses..."):
-            df_to_process = process_free_text(df_to_process, free_text_cols, cache_path)
+            processed_subset = process_free_text(df_to_process, free_text_cols, cache_path)
 
-        df = df_to_process
+        # Merge processed rows back into the main dataframe so previously
+        # unprocessed English comments are retained for later analysis.
+        df.update(processed_subset)
 
         st.success("Processing complete")
         download_link(
@@ -969,7 +971,9 @@ if file and validate_file(file):
             help="Save the enriched data as an Excel file.",
         )
 
-        df = review_translations(df, user_id_col)
+        processed_subset = review_translations(processed_subset, user_id_col)
+        # Persist edits back into the full DataFrame and cache
+        df.update(processed_subset)
         st.session_state["processed_df"] = df
         df.to_pickle(cache_path)
         if os.path.exists(partial_path):
