@@ -11,7 +11,7 @@ import openai
 import pandas as pd
 import streamlit as st
 from docx import Document
-from docx.shared import Inches
+from docx.shared import Inches, Pt
 from fpdf import FPDF
 import tempfile
 import zipfile
@@ -276,10 +276,11 @@ def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
 
 def create_chart(pivot: pd.DataFrame, title: str):
     """Return an Altair chart object matching the on-screen chart."""
-    color_range = ["#ff66b3", "#3399ff"]
+    # Use a modern colour palette for a more polished look
+    color_range = ["#5e4fa2", "#3288bd", "#66c2a5", "#abdda4", "#e6f598", "#fee08b", "#fdae61", "#f46d43", "#d53e4f"]
     chart = (
         alt.Chart(pivot, background="white")
-        .mark_bar()
+        .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
         .encode(
             x=alt.X("Response:N", sort="-y", title="Response"),
             y=alt.Y("Count:Q", title="Count"),
@@ -531,6 +532,8 @@ def generate_report(df: pd.DataFrame) -> str:
 def save_docx(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
     """Create a DOCX report with text, pivot tables and charts."""
     document = Document()
+    document.styles["Normal"].font.name = "Arial"
+    document.styles["Normal"].font.size = Pt(11)
     for para in text.split("\n"):
         document.add_paragraph(para)
 
@@ -566,7 +569,9 @@ def save_pdf(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
     for title, pivot in pivots.items():
         pdf.ln(5)
         pdf.set_font("Arial", "B", 12)
+        pdf.set_text_color(14, 121, 178)
         pdf.cell(0, 10, title, ln=True)
+        pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", size=10)
         col_widths = [80, 30, 30]
         headers = list(pivot.columns)
@@ -694,6 +699,12 @@ def apply_style():
             }
             .stProgress>div>div>div {
                 background-color: #0E79B2;
+            }
+            div[data-testid="stMetricValue"] {
+                color: #0E79B2;
+            }
+            th, td {
+                padding: 6px 8px !important;
             }
         </style>
         """,
