@@ -190,6 +190,17 @@ CONTENT_RATING_ORDER = [
     "Excellent",
 ]
 
+# Rating order for question 12 satisfaction levels
+SATISFACTION_ORDER = [
+    "Very Dissatisfied",
+    "Dissatisfied",
+    "Slightly Dissatisfied",
+    "Neutral",
+    "Slightly Satisfied",
+    "Satisfied",
+    "Very Satisfied",
+]
+
 # ----------------------------- Utility Functions -----------------------------
 
 def detect_language_offline(text: str) -> str:
@@ -402,6 +413,25 @@ def rating_pivot(
     pivot["Percent"] = pivot.groupby("Aspect")["Count"].apply(lambda x: (x / x.sum() * 100).round(1))
     pivot["Rating"] = pd.Categorical(pivot["Rating"], categories=order, ordered=True)
     return pivot.sort_values(["Aspect", "Rating"]).reset_index(drop=True)
+
+
+def combined_rating_pivot(
+    df: pd.DataFrame, columns: List[str], order: List[str] | None = None
+) -> pd.DataFrame:
+    """Aggregate rating columns into a single pivot table."""
+    if not columns:
+        return pd.DataFrame(columns=["Response", "Count", "Percent"])
+    if order is None:
+        order = SATISFACTION_ORDER
+    ratings = df[columns].melt(value_name="Response")["Response"].dropna()
+    pivot = ratings.value_counts().reset_index()
+    pivot.columns = ["Response", "Count"]
+    total = pivot["Count"].sum()
+    pivot["Percent"] = (pivot["Count"] / total * 100).round(1)
+    pivot["Response"] = pd.Categorical(pivot["Response"], categories=order, ordered=True)
+    pivot = pivot.sort_values("Response").reset_index(drop=True)
+    total_row = pd.DataFrame({"Response": ["Total"], "Count": [total], "Percent": [100.0]})
+    return pd.concat([pivot, total_row], ignore_index=True)
 
 
 def stacked_bar_chart(
@@ -1191,6 +1221,33 @@ if file and validate_file(file):
             zip_entries.append((f"{safe}/table.csv", csv_bytes))
             zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
             processed.update(content_rating_cols)
+
+        satisfaction_cols = [c for c in structured_cols if str(c).startswith("12.")]
+        if satisfaction_cols:
+            pivot = combined_rating_pivot(analysis_df, satisfaction_cols, order=SATISFACTION_ORDER)
+            st.write("### How satisfied were you with the materials you created?")
+            st.dataframe(pivot)
+            chart_buf = bar_chart(pivot, "Satisfaction with Created Materials")
+            c1, c2 = st.columns(2)
+            with c1:
+                download_link(
+                    pivot,
+                    "pivot_q12.csv",
+                    "Download Question 12 CSV",
+                    help="Download the pivot table as a CSV file.",
+                )
+            with c2:
+                export_excel(
+                    pivot,
+                    "pivot_q12.xlsx",
+                    "Download Question 12 Excel",
+                    help="Download the pivot table as an Excel file."
+                )
+            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+            safe = safe_name("question_12")
+            zip_entries.append((f"{safe}/table.csv", csv_bytes))
+            zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+            processed.update(satisfaction_cols)
 
         for prefix, cols in groups.items():
             question = MULTISELECT_QUESTION_TEXTS.get(prefix, f"Question {prefix}")
