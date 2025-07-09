@@ -587,7 +587,40 @@ def process_free_text(
 
 # ----------------------------- Streamlit App -----------------------------
 
-st.set_page_config(page_title="NPS Survey Analyzer", layout="wide")
+st.set_page_config(page_title="NPS Survey Analyzer", page_icon="📊", layout="wide")
+
+
+def apply_style():
+    """Inject a modern look and feel using custom CSS."""
+    st.markdown(
+        """
+        <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+        <style>
+            html, body, [class*="css"]  { font-family: 'Roboto', sans-serif; }
+            [data-testid="stAppViewContainer"] {
+                background: linear-gradient(135deg, #f4f8fb 0%, #e0ecff 100%);
+            }
+            .stButton>button {
+                background-color: #0E79B2;
+                color: white;
+                border-radius: 4px;
+                padding: 0.5rem 1rem;
+                font-size: 1rem;
+            }
+            .stButton>button:hover {
+                background-color: #0b6391;
+                color: white;
+            }
+            .stProgress>div>div>div {
+                background-color: #0E79B2;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+apply_style()
 st.title("NPS Survey Analyzer")
 
 st.sidebar.header("1. Upload Survey Data")
