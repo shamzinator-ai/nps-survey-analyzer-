@@ -548,14 +548,15 @@ def create_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None
 
     # Ensure the expected column name exists for the X encoding.
     pivot = pivot.rename(columns={"Category": "Response"})
-    # Remove any total row so it doesn't appear as its own bar
     if "Response" in pivot.columns:
+        # Ensure we work with strings for label wrapping and comparisons
+        pivot["Response"] = pivot["Response"].astype(str)
+        # Remove any total row so it doesn't appear as its own bar
         pivot = pivot[pivot["Response"] != "Total"]
 
-    # Pre-wrap labels to avoid using JavaScript expressions which can fail
-    # during PNG conversion in vl-convert. Replace spaces with newline
-    # characters before plotting.
-    if "Response" in pivot.columns:
+        # Pre-wrap labels to avoid using JavaScript expressions which can fail
+        # during PNG conversion in vl-convert. Replace spaces with newline
+        # characters before plotting.
         pivot["Response_wrapped"] = pivot["Response"].str.replace(" ", "\n")
 
     enc_color = alt.Color(
