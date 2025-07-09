@@ -132,8 +132,10 @@ def categorize_text(text: str) -> List[str]:
     categories_str = ", ".join(CATEGORIES)
     system_prompt = (
         "You are a helpful assistant that tags survey comments with all relevant "
-        "categories from the provided list. Return a comma-separated list of "
-        "matching categories. If none apply, return 'None'."
+        "categories from the provided list. Look for any mention of AI, including "
+        "references to the 'create' tool, the 'report writer' or the 'lesson "
+        "planner'. Return a comma-separated list of matching categories. If none "
+        "apply, return 'None'."
     )
     user_prompt = f"Categories: {categories_str}\nComment: {text}"
     try:
@@ -194,9 +196,11 @@ async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], str,
     categories_str = ", ".join(CATEGORIES)
     system_prompt = (
         "You are a helpful assistant that tags survey comments with all relevant "
-        "categories from the provided list. Return a JSON object with keys "
-        "'categories' (comma-separated list of categories or 'None') and "
-        "'reasoning' (max 30 words explaining the choice)."
+        "categories from the provided list. Look for any mention of AI, including "
+        "references to the 'create' tool, the 'report writer' or the 'lesson "
+        "planner'. Return a JSON object with keys 'categories' (comma-separated "
+        "list of categories or 'None') and 'reasoning' (max 30 words explaining "
+        "the choice)."
     )
 
     async def _categorize(text: str) -> Tuple[List[str], str, int, str]:
