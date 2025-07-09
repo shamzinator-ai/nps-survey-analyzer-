@@ -1117,6 +1117,7 @@ if file and validate_file(file):
         for c in df.columns
         if c not in free_text_cols + [user_id_col, location_col]
         and c not in EXCLUDED_STRUCTURED_COLUMNS
+        and "unnamed" not in str(c).lower()
     ]
     structured_cols = st.multiselect(
         "Structured question columns",
@@ -1124,6 +1125,9 @@ if file and validate_file(file):
         default=available_structured,
         help="Responses to these columns will be summarised in pivot tables.",
     )
+
+    # Skip any columns accidentally selected that contain 'Unnamed'
+    structured_cols = [c for c in structured_cols if "unnamed" not in str(c).lower()]
 
 
     preset_name = st.selectbox(
