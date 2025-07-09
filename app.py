@@ -18,6 +18,9 @@ import zipfile
 
 # Set your OpenAI API key via environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY", "")
+# Create a separate async client for concurrent API calls while
+# keeping the synchronous client for single requests.
+openai_async = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 if not openai.api_key:
     st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
     st.stop()
@@ -149,7 +152,7 @@ async def async_translate_batch(texts: List[str]) -> List[Tuple[str, str, int, s
             "Respond in JSON with keys 'language' and 'translation'.\nText: " + text
         )
         try:
-            response = await openai.chat.completions.create(
+            response = await openai_async.chat.completions.create(
                 model=MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
@@ -188,7 +191,7 @@ async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], str,
             return [], "", 0, ""
         user_prompt = f"Categories: {categories_str}\nComment: {text}"
         try:
-            response = await openai.chat.completions.create(
+            response = await openai_async.chat.completions.create(
                 model=MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
