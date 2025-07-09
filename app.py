@@ -734,6 +734,8 @@ def apply_style():
             html, body, [class*="css"]  { font-family: 'Roboto', sans-serif; }
             [data-testid="stAppViewContainer"] {
                 background: linear-gradient(135deg, #f4f8fb 0%, #e0ecff 100%);
+                height: 100vh;
+                overflow-y: auto;
             }
             .stButton>button {
                 background-color: #0E79B2;
