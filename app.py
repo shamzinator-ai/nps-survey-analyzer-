@@ -23,6 +23,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY", "")
 # Create a separate async client for concurrent API calls while
 # keeping the synchronous client for single requests.
 openai_async = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+DEBUG = os.getenv("DEBUG", "0") == "1"
 if not openai.api_key:
     st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
     st.stop()
@@ -30,6 +31,10 @@ MODEL = "gpt-4o-mini"
 
 # Provide user-friendly messages for common OpenAI errors
 def format_openai_error(e: Exception) -> str:
+    if DEBUG:
+        print(f"DEBUG OpenAI error: {e.__class__.__name__}: {e}", flush=True)
+        if getattr(e, "__cause__", None):
+            print(f"DEBUG cause: {e.__cause__}", flush=True)
     if isinstance(e, openai.AuthenticationError):
         return "Authentication failed. Check your OPENAI_API_KEY."
     if isinstance(e, openai.RateLimitError):
@@ -161,6 +166,8 @@ def translate_text(text: str) -> Tuple[str, str]:
     except json.JSONDecodeError as e:
         st.error(f"Failed to parse JSON response: {e}")
     except Exception as e:
+        if DEBUG:
+            st.exception(e)
         st.error(f"Translation failed: {format_openai_error(e)}")
         return text, ""
 
@@ -199,6 +206,8 @@ def categorize_text(text: str) -> List[str]:
         st.error(f"Failed to parse JSON response: {e}")
         return []
     except Exception as e:
+        if DEBUG:
+            st.exception(e)
         st.error(f"Categorization failed: {format_openai_error(e)}")
         return []
 
@@ -237,6 +246,8 @@ async def async_translate_batch(texts: List[str]) -> List[Tuple[str, str, int, s
             st.error(f"Failed to parse JSON response: {e}")
             return text, "", 0, ""
         except Exception as e:
+            if DEBUG:
+                st.exception(e)
             st.error(f"Translation failed: {format_openai_error(e)}")
             return text, "", 0, ""
 
@@ -285,6 +296,8 @@ async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], str,
             st.error(f"Failed to parse JSON response: {e}")
             return [], "", 0, ""
         except Exception as e:
+            if DEBUG:
+                st.exception(e)
             st.error(f"Categorization failed: {format_openai_error(e)}")
             return [], "", 0, ""
 
@@ -558,6 +571,8 @@ def generate_report(df: pd.DataFrame) -> str:
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
+        if DEBUG:
+            st.exception(e)
         st.error(f"Report generation failed: {format_openai_error(e)}")
         return ""
 
