@@ -42,6 +42,19 @@ CATEGORIES = [
     "Negative Words", "Positive Words"
 ]
 
+# Default column names for common Twinkl survey exports
+DEFAULT_USER_ID_COLUMN = "25.0: User ID"
+DEFAULT_LOCATION_COLUMN = "country"
+DEFAULT_FREE_TEXT_COLUMNS = [
+    "2: Thanks. We’d love to know more about why you’d recommend Twinkl.",
+    "3: Thanks. Please tell us more about your score.",
+    "4: Please tell us more on how we can improve your experience with Twinkl.",
+    "7: We'd love to know more about your answers, especially where we can improve your website experience.",
+    "22: How can we improve your understanding of your membership and any of the products and features you already use?",
+    "23: We’d love to understand more about your answer to this question, and how we can make your subscription easier to understand.",
+    "24: Is there anything else you would like to tell us about your Twinkl experience?",
+]
+
 # Map each category to a short description shown in the sidebar
 CATEGORY_DESCRIPTIONS = {
     "Search/Navigation": "Finding resources or moving around the site",
@@ -700,18 +713,35 @@ if file and validate_file(file):
     st.write(f"**Rows:** {df.shape[0]}  **Columns:** {df.shape[1]}")
     st.write("**Columns:**", ", ".join(df.columns))
 
+    user_id_default = (
+        df.columns.get_loc(DEFAULT_USER_ID_COLUMN)
+        if DEFAULT_USER_ID_COLUMN in df.columns
+        else 0
+    )
     user_id_col = st.selectbox(
-        "Column with User ID", options=df.columns,
+        "Column with User ID",
+        options=df.columns,
+        index=user_id_default,
         help="Select the column that uniquely identifies each user."
     )
+    location_default = (
+        df.columns.get_loc(DEFAULT_LOCATION_COLUMN)
+        if DEFAULT_LOCATION_COLUMN in df.columns
+        else 0
+    )
     location_col = st.selectbox(
-        "Column with County/Location", options=df.columns,
+        "Column with County/Location",
+        options=df.columns,
+        index=location_default,
         help="Pick the column that indicates user location or segment."
     )
 
+    ft_options = [c for c in df.columns if c not in [user_id_col, location_col]]
+    ft_default = [c for c in DEFAULT_FREE_TEXT_COLUMNS if c in ft_options]
     free_text_cols = st.multiselect(
         "Free-text response columns",
-        options=[c for c in df.columns if c not in [user_id_col, location_col]],
+        options=ft_options,
+        default=ft_default,
         help="These comments will be translated and categorised."
     )
 
