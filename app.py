@@ -363,6 +363,76 @@ def multiselect_pivot(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
     return pd.concat([pivot, total_row], ignore_index=True)
 
 
+def rating_pivot(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+    """Combine multiple rating columns into a single long-format pivot."""
+    order = [
+        "Very Hard",
+        "Hard",
+        "Somewhat Hard",
+        "Neutral",
+        "Somewhat Easy",
+        "Easy",
+        "Very Easy",
+    ]
+    df_long = df[columns].melt(value_name="Rating", var_name="Aspect").dropna()
+    df_long["Aspect"] = df_long["Aspect"].apply(lambda c: re.sub(r"^\d+[\.:]\s*", "", str(c)).strip())
+    pivot = df_long.value_counts(["Aspect", "Rating"]).reset_index(name="Count")
+    pivot["Percent"] = pivot.groupby("Aspect")["Count"].apply(lambda x: (x / x.sum() * 100).round(1))
+    pivot["Rating"] = pd.Categorical(pivot["Rating"], categories=order, ordered=True)
+    return pivot.sort_values(["Aspect", "Rating"]).reset_index(drop=True)
+
+
+def stacked_bar_chart(pivot: pd.DataFrame, title: str) -> BytesIO:
+    """Display a stacked bar chart and allow PNG/SVG download."""
+    order = [
+        "Very Hard",
+        "Hard",
+        "Somewhat Hard",
+        "Neutral",
+        "Somewhat Easy",
+        "Easy",
+        "Very Easy",
+    ]
+
+    chart = (
+        alt.Chart(pivot, background="white")
+        .mark_bar()
+        .encode(
+            x=alt.X("Aspect:N", title="Aspect"),
+            y=alt.Y("Count:Q", stack="normalize", axis=alt.Axis(format="%"), title="Percent"),
+            color=alt.Color("Rating:N", sort=order),
+            tooltip=["Rating", "Count"]
+        )
+        .properties(title=f"{title} \U0001F4CA", height=300)
+        .configure_title(fontSize=22)
+        .configure_axis(labelFontSize=16, titleFontSize=18)
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+    png_buffer = BytesIO()
+    chart.save(png_buffer, format="png")
+    png_buffer.seek(0)
+    svg_buffer = StringIO()
+    chart.save(svg_buffer, format="svg")
+    svg_bytes = svg_buffer.getvalue().encode("utf-8")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            "Download Chart PNG",
+            png_buffer,
+            file_name=f"{title}.png",
+            mime="image/png",
+        )
+    with col2:
+        st.download_button(
+            "Download Chart SVG",
+            svg_bytes,
+            file_name=f"{title}.svg",
+            mime="image/svg+xml",
+        )
+    return png_buffer
+
+
 def create_chart(pivot: pd.DataFrame, title: str):
     """Return an Altair chart object matching the on-screen chart."""
     color_range = ["#ff66b3", "#3399ff"]
@@ -1043,6 +1113,33 @@ if file and validate_file(file):
         }
 
         processed: set[str] = set()
+
+        rating_cols = [c for c in structured_cols if str(c).startswith("6.")]
+        if rating_cols:
+            pivot = rating_pivot(analysis_df, rating_cols)
+            st.write("### Of the following areas, please rate how easy they are to use")
+            st.dataframe(pivot)
+            chart_buf = stacked_bar_chart(pivot, "Ease of Use by Area")
+            c1, c2 = st.columns(2)
+            with c1:
+                download_link(
+                    pivot,
+                    "pivot_q6.csv",
+                    "Download Question 6 CSV",
+                    help="Download the pivot table as a CSV file.",
+                )
+            with c2:
+                export_excel(
+                    pivot,
+                    "pivot_q6.xlsx",
+                    "Download Question 6 Excel",
+                    help="Download the pivot table as an Excel file."
+                )
+            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+            safe = safe_name("question_6")
+            zip_entries.append((f"{safe}/table.csv", csv_bytes))
+            zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+            processed.update(rating_cols)
 
         for prefix, cols in groups.items():
             question = MULTISELECT_QUESTION_TEXTS.get(prefix, f"Question {prefix}")
