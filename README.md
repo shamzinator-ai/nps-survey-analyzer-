@@ -17,6 +17,8 @@ This repository contains a simple Streamlit application for analyzing NPS survey
 - Progress bars for long-running translation and categorization tasks.
 - Expandable comments for spot-checking AI results.
 - Language detection stored alongside translations.
+- Intermediate results saved after each processing batch.
+- Automatically resume processing from the last completed row on startup.
 
 ## Requirements
 

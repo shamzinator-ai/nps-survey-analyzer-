@@ -462,25 +462,45 @@ def save_pdf(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
     return bio
 
 
-def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFrame:
-    """Concatenate, translate and categorize free-text columns with progress."""
+def process_free_text(
+    df: pd.DataFrame, free_text_cols: List[str], cache_path: str
+) -> pd.DataFrame:
+    """Concatenate, translate and categorize free-text columns with progress.
+
+    The function saves intermediate results to ``cache_path`` with a ``_partial``
+    suffix after each processed batch so that work can be resumed if the app is
+    restarted.
+    """
+
     concat = [
         " ".join(str(row[c]) if pd.notnull(row[c]) else "" for c in free_text_cols)
         for _, row in df.iterrows()
     ]
 
-    translated: List[str] = ["" for _ in concat]
-    languages: List[str] = ["" for _ in concat]
-    categories: List[str] = ["" for _ in concat]
-    token_usage: List[int] = [0 for _ in concat]
-    finish_reasons: List[str] = ["" for _ in concat]
+    df["Concatenated"] = concat
+
+    # Ensure output columns exist
+    for col, default in [
+        ("Translated", ""),
+        ("Language", ""),
+        ("Categories", ""),
+        ("ModelTokens", 0),
+        ("FinishReason", ""),
+    ]:
+        if col not in df.columns:
+            df[col] = default
+
+    # Determine which rows still need processing
+    to_process = [i for i, t in enumerate(df["Translated"]) if not isinstance(t, str) or not t.strip()]
 
     progress = st.progress(0.0, text="Starting...")
     start_time = time.time()
     batch_size = 5
+    partial_path = cache_path.replace(".pkl", "_partial.pkl")
 
-    for start_idx in range(0, len(concat), batch_size):
-        batch_texts = concat[start_idx : start_idx + batch_size]
+    for batch_start in range(0, len(to_process), batch_size):
+        batch_indices = to_process[batch_start : batch_start + batch_size]
+        batch_texts = [concat[i] for i in batch_indices]
 
         trans_lang = asyncio.run(async_translate_batch(batch_texts))
         batch_trans = [t for t, _, _, _ in trans_lang]
@@ -493,26 +513,22 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str]) -> pd.DataFra
         batch_toks_cat = [tok for _, tok, _ in batch_cats_data]
         batch_finish_cat = [fin for _, _, fin in batch_cats_data]
 
-        for offset, idx in enumerate(range(start_idx, min(start_idx + batch_size, len(concat)))):
-            translated[idx] = batch_trans[offset]
-            languages[idx] = batch_langs[offset]
-            categories[idx] = ", ".join(batch_cats[offset])
-            token_usage[idx] = batch_toks_trans[offset] + batch_toks_cat[offset]
-            finish_reasons[idx] = f"{batch_finish_trans[offset]}; {batch_finish_cat[offset]}"
+        for offset, idx in enumerate(batch_indices):
+            df.at[idx, "Translated"] = batch_trans[offset]
+            df.at[idx, "Language"] = batch_langs[offset]
+            df.at[idx, "Categories"] = ", ".join(batch_cats[offset])
+            df.at[idx, "ModelTokens"] = batch_toks_trans[offset] + batch_toks_cat[offset]
+            df.at[idx, "FinishReason"] = f"{batch_finish_trans[offset]}; {batch_finish_cat[offset]}"
 
-        processed = min(start_idx + batch_size, len(concat))
-        rate = (time.time() - start_time) / processed
-        remaining = rate * (len(concat) - processed)
-        progress.progress(processed / len(concat), text=f"Processing... ETA {int(remaining)}s")
+        processed = batch_start + len(batch_indices)
+        rate = (time.time() - start_time) / (processed if processed else 1)
+        remaining = rate * (len(to_process) - processed)
+        progress.progress(processed / len(to_process), text=f"Processing... ETA {int(remaining)}s")
+
+        # Persist partial results after each batch
+        df.to_pickle(partial_path)
 
     progress.empty()
-
-    df["Concatenated"] = concat
-    df["Translated"] = translated
-    df["Language"] = languages
-    df["Categories"] = categories
-    df["ModelTokens"] = token_usage
-    df["FinishReason"] = finish_reasons
     return df
 
 # ----------------------------- Streamlit App -----------------------------
@@ -532,11 +548,15 @@ if file and validate_file(file):
     raw_bytes = file.getvalue()
     checksum = hashlib.md5(raw_bytes).hexdigest()
     cache_path = os.path.join(CACHE_DIR, f"{checksum}.pkl")
+    partial_path = os.path.join(CACHE_DIR, f"{checksum}_partial.pkl")
     if "processed_df" in st.session_state:
         df = st.session_state["processed_df"]
     elif os.path.exists(cache_path):
         df = pd.read_pickle(cache_path)
         st.success("Loaded cached processed data")
+    elif os.path.exists(partial_path):
+        df = pd.read_pickle(partial_path)
+        st.info("Resuming from saved progress")
     else:
         try:
             if file.name.endswith(("xls", "xlsx")):
@@ -614,14 +634,17 @@ if file and validate_file(file):
             for msg in errors:
                 st.error(msg)
             st.stop()
+        partial_path = cache_path.replace(".pkl", "_partial.pkl")
         with st.spinner("Processing free-text responses..."):
-            df = process_free_text(df, free_text_cols)
+            df = process_free_text(df, free_text_cols, cache_path)
 
         st.success("Processing complete")
 
         df = review_translations(df, user_id_col)
         st.session_state["processed_df"] = df
         df.to_pickle(cache_path)
+        if os.path.exists(partial_path):
+            os.remove(partial_path)
 
         nps_col = next((c for c in structured_cols if "nps" in c.lower()), None)
         display_summary(df, nps_col)
