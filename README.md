@@ -20,6 +20,7 @@ This repository contains a simple Streamlit application for analyzing NPS survey
 - When multiple segments are selected, generate a report for each and download all DOCX/PDF files in a ZIP.
 - Progress bars for long-running translation and categorization tasks.
 - Uses OpenAI's async client for faster batch processing.
+- Choose to run only structured analysis, only free-text analysis, or both.
 - Expandable comments for spot-checking AI results.
 - Language detection stored alongside translations.
 - Intermediate results saved after each processing batch.
