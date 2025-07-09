@@ -1,6 +1,7 @@
 import os
 import json
 from io import BytesIO, StringIO
+import re
 from typing import List, Tuple
 import time
 import asyncio
@@ -403,6 +404,12 @@ def bar_chart(pivot: pd.DataFrame, title: str) -> BytesIO:
         )
 
     return png_buffer
+
+
+def safe_name(name: str) -> str:
+    """Return a filesystem-friendly version of a name."""
+    name = name.strip().replace(" ", "_")
+    return re.sub(r"[^A-Za-z0-9_-]", "_", name)
 
 
 def category_frequency(df: pd.DataFrame) -> pd.DataFrame:
@@ -979,11 +986,12 @@ if file and validate_file(file):
         display_summary(analysis_df, nps_col)
 
         st.subheader("Structured Data Analysis")
+        zip_entries: list[tuple[str, bytes]] = []
         for col in structured_cols:
             pivot = generate_pivot(analysis_df, col)
             st.write(f"### {col}")
             st.dataframe(pivot)
-            bar_chart(pivot, f"{col} Responses")
+            chart_buf = bar_chart(pivot, f"{col} Responses")
             c1, c2 = st.columns(2)
             with c1:
                 download_link(
@@ -999,6 +1007,23 @@ if file and validate_file(file):
                     f"Download {col} Excel",
                     help="Download the pivot table as an Excel file."
                 )
+            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+            safe = safe_name(col)
+            zip_entries.append((f"{safe}/table.csv", csv_bytes))
+            zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+
+        if zip_entries:
+            zip_buf = BytesIO()
+            with zipfile.ZipFile(zip_buf, "w") as zipf:
+                for name, data in zip_entries:
+                    zipf.writestr(name, data)
+            zip_buf.seek(0)
+            st.download_button(
+                "Download All Charts/Tables",
+                zip_buf,
+                "all_pivots.zip",
+                help="Download every pivot table CSV and chart PNG at once."
+            )
 
         st.subheader("Categorized Comments")
         display_cols = [
