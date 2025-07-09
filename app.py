@@ -944,6 +944,44 @@ def save_pdf(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
     return bio
 
 
+def save_pivots_pdf(pivots: list[tuple[str, pd.DataFrame]]) -> BytesIO:
+    """Create a PDF containing pivot tables with their charts."""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(True, margin=15)
+    first = True
+    for title, pivot in pivots:
+        if not first:
+            pdf.add_page()
+        first = False
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(0, 10, title, ln=True)
+        pdf.set_font("Arial", size=10)
+        col_widths = [80, 30, 30]
+        headers = list(pivot.columns)
+        for i, h in enumerate(headers):
+            w = col_widths[i] if i < len(col_widths) else 30
+            pdf.cell(w, 8, str(h), border=1)
+        pdf.ln()
+        for _, row in pivot.iterrows():
+            for i, h in enumerate(headers):
+                w = col_widths[i] if i < len(col_widths) else 30
+                pdf.cell(w, 8, str(row[h]), border=1)
+            pdf.ln()
+        img = chart_png(pivot, f"{title} Responses")
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(img.getvalue())
+            tmp.flush()
+            pdf.image(tmp.name, w=180)
+        os.unlink(tmp.name)
+
+    pdf_bytes = pdf.output(dest="S").encode("latin-1")
+    bio = BytesIO()
+    bio.write(pdf_bytes)
+    bio.seek(0)
+    return bio
+
+
 def process_free_text(
     df: pd.DataFrame, free_text_cols: List[str], cache_path: str
 ) -> pd.DataFrame:
@@ -1346,6 +1384,7 @@ if file and validate_file(file):
     
             st.subheader("Structured Data Analysis")
             zip_entries: list[tuple[str, bytes]] = []
+            pdf_pivots: list[tuple[str, pd.DataFrame]] = []
     
             # Identify multi-select question groups by numeric prefix
             pattern = re.compile(r"^(\d+)[\.:]")
@@ -1404,6 +1443,7 @@ if file and validate_file(file):
                 safe = safe_name("question_ease")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                pdf_pivots.append(("Of the following areas, please rate how easy they were to use", pivot))
                 processed.update(ease_cols)
     
             content_rating_cols = [c for c in structured_cols if str(c).startswith("8.")]
@@ -1431,6 +1471,7 @@ if file and validate_file(file):
                 safe = safe_name("question_8")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                pdf_pivots.append(("Please rate the following about our content", pivot))
                 processed.update(content_rating_cols)
     
             satisfaction_cols = [c for c in structured_cols if str(c).startswith("12.")]
@@ -1458,6 +1499,7 @@ if file and validate_file(file):
                 safe = safe_name("question_12")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                pdf_pivots.append(("How satisfied were you with the materials you created?", pivot))
                 processed.update(satisfaction_cols)
     
             importance_cols = [c for c in structured_cols if re.match(r"^21[\.:]", str(c))]
@@ -1485,6 +1527,7 @@ if file and validate_file(file):
                 safe = safe_name("question_21")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                pdf_pivots.append(("Tell us how important the following are to you", pivot))
     
             for prefix, cols in groups.items():
                 question = MULTISELECT_QUESTION_TEXTS.get(prefix, f"Question {prefix}")
@@ -1511,6 +1554,7 @@ if file and validate_file(file):
                 safe = safe_name(f"question_{prefix}")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                pdf_pivots.append((question, pivot))
                 processed.update(cols)
     
             for col in structured_cols:
@@ -1539,6 +1583,7 @@ if file and validate_file(file):
                 safe = safe_name(col)
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                pdf_pivots.append((str(col), pivot))
     
             if zip_entries:
                 zip_buf = BytesIO()
@@ -1552,6 +1597,14 @@ if file and validate_file(file):
                     "all_pivots.zip",
                     help="Download every pivot table CSV and chart PNG at once.",
                     key=unique_key("all_pivots_zip"),
+                )
+                pdf_file = save_pivots_pdf(pdf_pivots)
+                st.download_button(
+                    "Download All Charts/Tables PDF",
+                    pdf_file,
+                    "all_pivots.pdf",
+                    help="Download every pivot table and chart in one PDF.",
+                    key=unique_key("all_pivots_pdf"),
                 )
 
         if analysis_mode != "Structured Data Only" and show_comments:
