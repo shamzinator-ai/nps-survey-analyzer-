@@ -535,6 +535,10 @@ def review_translations(df: pd.DataFrame, id_col: str) -> pd.DataFrame:
                 "Flag for review", key=f"flag_{idx}",
                 help="Mark this comment for manual follow-up.")
             df.at[idx, "Translated"] = new_trans
+            if new_trans.strip():
+                df.at[idx, "FinalText"] = new_trans
+            else:
+                df.at[idx, "FinalText"] = row["Concatenated"]
             df.at[idx, "Categories"] = ", ".join(new_cats)
             flags.append(flag)
     df["Flagged"] = flags
@@ -718,6 +722,10 @@ def process_free_text(
         df.to_pickle(partial_path)
 
     progress.empty()
+    df["FinalText"] = df["Translated"].where(
+        df["Translated"].str.strip() != "",
+        df["Concatenated"],
+    )
     return df
 
 # ----------------------------- Streamlit App -----------------------------
@@ -961,7 +969,7 @@ if file and validate_file(file):
             user_id_col,
             location_col,
             'Concatenated',
-            'Translated',
+            'FinalText',
             'Language',
             'Categories',
             'ModelTokens',
@@ -976,7 +984,7 @@ if file and validate_file(file):
             sample = analysis_df.sample(min(5, len(analysis_df)))
             for _, row in sample.iterrows():
                 st.write(f"**User {row[user_id_col]}** - {row['Categories']}")
-                st.write(row['Translated'])
+                st.write(row['FinalText'])
         download_link(
             analysis_df,
             "full_results.csv",
@@ -1014,7 +1022,7 @@ if file and validate_file(file):
                     bar_chart(cat_pivot, f"{segment_title} Category Frequency")
                     st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
 
-                    report_text = generate_report(seg_df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
+                    report_text = generate_report(seg_df[[user_id_col, location_col, 'FinalText', 'Categories', 'Flagged']])
                     if not report_text:
                         continue
                     st.markdown(f"## Report for {segment_title}")
