@@ -201,6 +201,15 @@ SATISFACTION_ORDER = [
     "Very Satisfied",
 ]
 
+# Rating order for question 21 importance scale
+IMPORTANCE_ORDER = [
+    "1 - Not at all important",
+    "2",
+    "3",
+    "4",
+    "5 - Very important",
+]
+
 # ----------------------------- Utility Functions -----------------------------
 
 def detect_language_offline(text: str) -> str:
@@ -1254,6 +1263,32 @@ if file and validate_file(file):
             zip_entries.append((f"{safe}/table.csv", csv_bytes))
             zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
             processed.update(satisfaction_cols)
+
+        importance_cols = [c for c in structured_cols if re.match(r"^21[\.:]", str(c))]
+        if importance_cols:
+            pivot = rating_pivot(analysis_df, importance_cols, order=IMPORTANCE_ORDER)
+            st.write("### Tell us how important the following are to you")
+            st.dataframe(pivot)
+            chart_buf = stacked_bar_chart(pivot, "Importance Ratings", order=IMPORTANCE_ORDER)
+            c1, c2 = st.columns(2)
+            with c1:
+                download_link(
+                    pivot,
+                    "pivot_q21.csv",
+                    "Download Question 21 CSV",
+                    help="Download the pivot table as a CSV file.",
+                )
+            with c2:
+                export_excel(
+                    pivot,
+                    "pivot_q21.xlsx",
+                    "Download Question 21 Excel",
+                    help="Download the pivot table as an Excel file.",
+                )
+            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+            safe = safe_name("question_21")
+            zip_entries.append((f"{safe}/table.csv", csv_bytes))
+            zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
 
         for prefix, cols in groups.items():
             question = MULTISELECT_QUESTION_TEXTS.get(prefix, f"Question {prefix}")
