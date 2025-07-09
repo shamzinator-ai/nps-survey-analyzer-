@@ -1078,6 +1078,15 @@ if file and validate_file(file):
     checksum = hashlib.sha256(raw_bytes).hexdigest()
     cache_path = os.path.join(CACHE_DIR, f"{checksum}.pkl")
     partial_path = os.path.join(CACHE_DIR, f"{checksum}_partial.pkl")
+
+    if st.sidebar.button("Clear Cached Data"):
+        if os.path.exists(cache_path):
+            os.remove(cache_path)
+        if os.path.exists(partial_path):
+            os.remove(partial_path)
+        st.session_state.pop("processed_df", None)
+        st.sidebar.success("Cached data cleared")
+
     if "processed_df" in st.session_state:
         df = st.session_state["processed_df"]
     elif os.path.exists(cache_path):
