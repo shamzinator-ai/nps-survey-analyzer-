@@ -456,8 +456,10 @@ def save_pdf(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
             pdf.image(tmp.name, w=180)
         os.unlink(tmp.name)
 
+    # Generate PDF bytes and write them to a BytesIO buffer
+    pdf_bytes = pdf.output(dest="S").encode("latin-1")
     bio = BytesIO()
-    pdf.output(bio)
+    bio.write(pdf_bytes)
     bio.seek(0)
     return bio
 
