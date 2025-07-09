@@ -226,12 +226,16 @@ def create_chart(pivot: pd.DataFrame, title: str):
         .encode(
             x=alt.X("Response:N", sort="-y", title="Response"),
             y=alt.Y("Count:Q", title="Count"),
-            color=alt.Color("Count:Q", scale=alt.Scale(range=color_range), legend=None),
+            color=alt.Color(
+                "Count:Q",
+                scale=alt.Scale(range=color_range),
+                legend=None,
+            ),
             tooltip=["Response", "Count"],
         )
         .properties(title=f"{title} 📊", height=300)
-        .configure_title(fontSize=18)
-        .configure_axis(labelFontSize=12, titleFontSize=14)
+        .configure_title(fontSize=22)
+        .configure_axis(labelFontSize=16, titleFontSize=18)
     )
     return chart
 
