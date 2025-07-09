@@ -20,14 +20,26 @@ import tempfile
 import zipfile
 
 # Set your OpenAI API key via environment variable
-openai.api_key = os.getenv("OPENAI_API_KEY", "")
-# Create a separate async client for concurrent API calls while
-# keeping the synchronous client for single requests.
-openai_async = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+# Use an environment variable if available but also allow entering the API key
+# via the UI so the app can run without preconfigured environment variables.
+if "api_key" not in st.session_state:
+    st.session_state["api_key"] = os.getenv("OPENAI_API_KEY", "")
+
+openai.api_key = st.session_state["api_key"]
+# Create a separate async client for concurrent API calls while keeping the
+# synchronous client for single requests.
+openai_async = openai.AsyncOpenAI(api_key=openai.api_key)
 DEBUG = os.getenv("DEBUG", "0") == "1"
+
 if not openai.api_key:
-    st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
-    st.stop()
+    st.sidebar.warning("Please enter your OpenAI API key to continue.")
+    key_input = st.sidebar.text_input("OpenAI API Key", type="password")
+    if key_input:
+        openai.api_key = key_input.strip()
+        st.session_state["api_key"] = openai.api_key
+        openai_async = openai.AsyncOpenAI(api_key=openai.api_key)
+    else:
+        st.stop()
 MODEL = "gpt-4o-mini"
 
 # Provide user-friendly messages for common OpenAI errors
