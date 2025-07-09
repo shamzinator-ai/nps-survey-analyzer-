@@ -25,9 +25,12 @@ openai.api_key = os.getenv("OPENAI_API_KEY", "")
 openai_async = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 DEBUG = os.getenv("DEBUG", "0") == "1"
 if not openai.api_key:
-    st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
+    st.error(
+        "OpenAI API key not found. Please set the OPENAI_API_KEY environment variable."
+    )
     st.stop()
 MODEL = "gpt-4o-mini"
+
 
 # Provide user-friendly messages for common OpenAI errors
 def format_openai_error(e: Exception) -> str:
@@ -47,20 +50,52 @@ def format_openai_error(e: Exception) -> str:
         return f"OpenAI API error {e.status_code}: {e.message}"
     return str(e)
 
+
 # Directory for cached processed data
 CACHE_DIR = "cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 CATEGORIES = [
-    "Search/Navigation", "Resource Mention", "User Question", "Translation Mention",
-    "User Suggestion", "Pain Point", "AI", "Competitor", "Site Error", "Social Media",
-    "Phonics", "Price Mention", "Accidental Purchase", "Resource Preview",
-    "Resource Request", "Editing/Adapting Resource", "Resource Quality", "EDI", "SEND",
-    "Partnership", "Parental Leave", "Email", "Email Verification", "Not Used Enough",
-    "Legal", "Glassdoor", "GDPR", "Free Resources", "Download Issues", "Content Errors",
-    "Account Access", "Already Cancelled", "Auto-renewal", "Book Club",
-    "Cancellation Difficulty", "CS General", "CS Negative", "CS Positive",
-    "Negative Words", "Positive Words"
+    "Search/Navigation",
+    "Resource Mention",
+    "User Question",
+    "Translation Mention",
+    "User Suggestion",
+    "Pain Point",
+    "AI",
+    "Competitor",
+    "Site Error",
+    "Social Media",
+    "Phonics",
+    "Price Mention",
+    "Accidental Purchase",
+    "Resource Preview",
+    "Resource Request",
+    "Editing/Adapting Resource",
+    "Resource Quality",
+    "EDI",
+    "SEND",
+    "Partnership",
+    "Parental Leave",
+    "Email",
+    "Email Verification",
+    "Not Used Enough",
+    "Legal",
+    "Glassdoor",
+    "GDPR",
+    "Free Resources",
+    "Download Issues",
+    "Content Errors",
+    "Account Access",
+    "Already Cancelled",
+    "Auto-renewal",
+    "Book Club",
+    "Cancellation Difficulty",
+    "CS General",
+    "CS Negative",
+    "CS Positive",
+    "Negative Words",
+    "Positive Words",
 ]
 
 # Default column names for common Twinkl survey exports
@@ -134,12 +169,14 @@ CATEGORY_DESCRIPTIONS = {
 
 # ----------------------------- Utility Functions -----------------------------
 
+
 def detect_language_offline(text: str) -> str:
     """Detect language locally using langdetect."""
     try:
         return detect(text)
     except LangDetectException:
         return ""
+
 
 @st.cache_data(show_spinner=False)
 def translate_text(text: str) -> Tuple[str, str]:
@@ -201,7 +238,7 @@ def categorize_text(text: str) -> List[str]:
         categories_raw = data.get("categories", "")
         if categories_raw.lower() == "none":
             return []
-        return [c.strip() for c in categories_raw.split(',')]
+        return [c.strip() for c in categories_raw.split(",")]
     except json.JSONDecodeError as e:
         st.error(f"Failed to parse JSON response: {e}")
         return []
@@ -234,7 +271,9 @@ async def async_translate_batch(texts: List[str]) -> List[Tuple[str, str, int, s
             )
             content = response.choices[0].message.content
             data = json.loads(content)
-            tokens = response.usage.total_tokens if getattr(response, "usage", None) else 0
+            tokens = (
+                response.usage.total_tokens if getattr(response, "usage", None) else 0
+            )
             finish = response.choices[0].finish_reason or ""
             return (
                 data.get("translation", "").strip(),
@@ -255,7 +294,9 @@ async def async_translate_batch(texts: List[str]) -> List[Tuple[str, str, int, s
     return await asyncio.gather(*tasks)
 
 
-async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], str, int, str]]:
+async def async_categorize_batch(
+    texts: List[str],
+) -> List[Tuple[List[str], str, int, str]]:
     """Categorize a batch of texts concurrently with short reasoning."""
 
     categories_str = ", ".join(CATEGORIES)
@@ -286,11 +327,13 @@ async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], str,
             data = json.loads(content)
             categories_raw = data.get("categories", "")
             reasoning = data.get("reasoning", "").strip()
-            tokens = response.usage.total_tokens if getattr(response, "usage", None) else 0
+            tokens = (
+                response.usage.total_tokens if getattr(response, "usage", None) else 0
+            )
             finish = response.choices[0].finish_reason or ""
             if categories_raw.lower() == "none":
                 return [], reasoning, tokens, finish
-            categories = [c.strip() for c in categories_raw.split(',')]
+            categories = [c.strip() for c in categories_raw.split(",")]
             return categories, reasoning, tokens, finish
         except json.JSONDecodeError as e:
             st.error(f"Failed to parse JSON response: {e}")
@@ -311,7 +354,9 @@ def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
     pivot.columns = ["Response", "Count"]
     total = pivot["Count"].sum()
     pivot["Percent"] = (pivot["Count"] / total * 100).round(1)
-    total_row = pd.DataFrame({"Response": ["Total"], "Count": [total], "Percent": [100.0]})
+    total_row = pd.DataFrame(
+        {"Response": ["Total"], "Count": [total], "Percent": [100.0]}
+    )
     pivot = pd.concat([pivot, total_row], ignore_index=True)
     return pivot
 
@@ -390,7 +435,9 @@ def category_frequency(df: pd.DataFrame) -> pd.DataFrame:
     pivot.columns = ["Category", "Count"]
     total = pivot["Count"].sum()
     pivot["Percent"] = (pivot["Count"] / total * 100).round(1)
-    total_row = pd.DataFrame({"Category": ["Total"], "Count": [total], "Percent": [100.0]})
+    total_row = pd.DataFrame(
+        {"Category": ["Total"], "Count": [total], "Percent": [100.0]}
+    )
     return pd.concat([pivot, total_row], ignore_index=True)
 
 
@@ -401,7 +448,9 @@ def sentiment_metrics(df: pd.DataFrame) -> tuple[int, int]:
     return pos, neg
 
 
-def compute_kpis(df: pd.DataFrame, nps_col: str | None) -> tuple[pd.DataFrame, pd.DataFrame, tuple[int, int]]:
+def compute_kpis(
+    df: pd.DataFrame, nps_col: str | None
+) -> tuple[pd.DataFrame, pd.DataFrame, tuple[int, int]]:
     """Calculate NPS distribution, category frequency and sentiment metrics."""
     nps_pivot = pd.DataFrame()
     if nps_col and nps_col in df.columns:
@@ -422,15 +471,15 @@ def display_summary(df: pd.DataFrame, nps_col: str | None):
     st.write("### Category Frequency")
     st.dataframe(cat_pivot)
     bar_chart(cat_pivot, "Category Frequency")
-    
+
     st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
     if not cat_pivot.empty:
         st.write("Top 3 Issues:", ", ".join(cat_pivot.head(3)["Category"].tolist()))
 
 
 def download_link(df: pd.DataFrame, filename: str, label: str, help: str | None = None):
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button(label, csv, file_name=filename, mime='text/csv', help=help)
+    csv = df.to_csv(index=False).encode("utf-8")
+    st.download_button(label, csv, file_name=filename, mime="text/csv", help=help)
 
 
 def export_excel(df: pd.DataFrame, filename: str, label: str, help: str | None = None):
@@ -447,7 +496,9 @@ def export_excel(df: pd.DataFrame, filename: str, label: str, help: str | None =
     )
 
 
-def export_full_excel(df: pd.DataFrame, filename: str, label: str, help: str | None = None):
+def export_full_excel(
+    df: pd.DataFrame, filename: str, label: str, help: str | None = None
+):
     """Download the entire processed DataFrame as an Excel file."""
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
@@ -478,6 +529,7 @@ def read_uploaded_file(uploaded_file) -> pd.DataFrame | None:
         st.error(f"Failed to read file: {e}")
     return None
 
+
 def validate_file(uploaded_file) -> bool:
     """Basic checks for uploaded file size and type."""
     max_size = 10 * 1024 * 1024  # 10MB
@@ -487,8 +539,12 @@ def validate_file(uploaded_file) -> bool:
     return True
 
 
-def validate_columns(user_id_col: str, location_col: str,
-                     free_text_cols: List[str], structured_cols: List[str]) -> bool:
+def validate_columns(
+    user_id_col: str,
+    location_col: str,
+    free_text_cols: List[str],
+    structured_cols: List[str],
+) -> bool:
     """Ensure mandatory columns are selected."""
     errors = []
     if not user_id_col:
@@ -524,16 +580,23 @@ def review_translations(df: pd.DataFrame, id_col: str) -> pd.DataFrame:
             if show_reasoning and row.get("CategoryReasoning"):
                 st.write("**Reasoning:**", row["CategoryReasoning"])
             new_trans = st.text_area(
-                "Translated", value=row["Translated"], key=f"trans_{idx}",
-                help="Edit the AI translation if it looks incorrect.")
+                "Translated",
+                value=row["Translated"],
+                key=f"trans_{idx}",
+                help="Edit the AI translation if it looks incorrect.",
+            )
             new_cats = st.multiselect(
-                "Categories", options=CATEGORIES,
-                default=[c.strip() for c in row["Categories"].split(',') if c],
+                "Categories",
+                options=CATEGORIES,
+                default=[c.strip() for c in row["Categories"].split(",") if c],
                 key=f"cat_{idx}",
-                help="Add or remove categories for this comment.")
+                help="Add or remove categories for this comment.",
+            )
             flag = st.checkbox(
-                "Flag for review", key=f"flag_{idx}",
-                help="Mark this comment for manual follow-up.")
+                "Flag for review",
+                key=f"flag_{idx}",
+                help="Mark this comment for manual follow-up.",
+            )
             df.at[idx, "Translated"] = new_trans
             df.at[idx, "Categories"] = ", ".join(new_cats)
             flags.append(flag)
@@ -565,8 +628,10 @@ def generate_report(df: pd.DataFrame) -> str:
     try:
         response = openai.chat.completions.create(
             model=MODEL,
-            messages=[{"role": "system", "content": prompt},
-                      {"role": "user", "content": user_content}],
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_content},
+            ],
             temperature=0.3,
         )
         return response.choices[0].message.content.strip()
@@ -673,7 +738,11 @@ def process_free_text(
             df[col] = default
 
     # Determine which rows still need processing
-    to_process = [i for i, t in enumerate(df["Translated"]) if not isinstance(t, str) or not t.strip()]
+    to_process = [
+        i
+        for i, t in enumerate(df["Translated"])
+        if not isinstance(t, str) or not t.strip()
+    ]
 
     progress = st.progress(0.0, text="Starting...")
     start_time = time.time()
@@ -701,7 +770,9 @@ def process_free_text(
             df.at[idx, "Language"] = batch_langs[offset]
             df.at[idx, "Categories"] = ", ".join(batch_cats[offset])
             df.at[idx, "CategoryReasoning"] = batch_reason[offset]
-            df.at[idx, "ModelTokens"] = batch_toks_trans[offset] + batch_toks_cat[offset]
+            df.at[idx, "ModelTokens"] = (
+                batch_toks_trans[offset] + batch_toks_cat[offset]
+            )
             fin_trans = batch_finish_trans[offset]
             fin_cat = batch_finish_cat[offset]
             if fin_trans == fin_cat:
@@ -712,13 +783,44 @@ def process_free_text(
         processed = batch_start + len(batch_indices)
         rate = (time.time() - start_time) / (processed if processed else 1)
         remaining = rate * (len(to_process) - processed)
-        progress.progress(processed / len(to_process), text=f"Processing... ETA {int(remaining)}s")
+        progress.progress(
+            processed / len(to_process), text=f"Processing... ETA {int(remaining)}s"
+        )
 
         # Persist partial results after each batch
         df.to_pickle(partial_path)
 
     progress.empty()
     return df
+
+
+def merge_results(
+    base_df: pd.DataFrame, updates: pd.DataFrame, id_col: str
+) -> pd.DataFrame:
+    """Merge processed rows back into the full dataset."""
+    merge_cols = [
+        "Concatenated",
+        "Translated",
+        "Language",
+        "Categories",
+        "CategoryReasoning",
+        "ModelTokens",
+        "FinishReason",
+        "Flagged",
+    ]
+    combined = base_df.merge(
+        updates[[id_col] + merge_cols],
+        on=id_col,
+        how="left",
+        suffixes=("", "_new"),
+    )
+    for col in merge_cols:
+        new_col = f"{col}_new"
+        if new_col in combined.columns:
+            combined[col] = combined[new_col].combine_first(combined[col])
+            combined.drop(columns=[new_col], inplace=True)
+    return combined
+
 
 # ----------------------------- Streamlit App -----------------------------
 
@@ -759,11 +861,11 @@ apply_style()
 st.title("NPS Survey Analyzer")
 
 st.sidebar.header("1. Upload Survey Data")
-st.sidebar.markdown(
-    "🔗 [Troubleshooting guide](README.md#troubleshooting)")
+st.sidebar.markdown("🔗 [Troubleshooting guide](README.md#troubleshooting)")
 file = st.sidebar.file_uploader(
-    "Upload CSV, XLS or XLSX", type=["csv", "xls", "xlsx"],
-    help="File must include a unique ID, location, at least one structured and one free-text column."
+    "Upload CSV, XLS or XLSX",
+    type=["csv", "xls", "xlsx"],
+    help="File must include a unique ID, location, at least one structured and one free-text column.",
 )
 
 if file and validate_file(file):
@@ -809,7 +911,7 @@ if file and validate_file(file):
         "Column with User ID",
         options=df.columns,
         index=user_id_default,
-        help="Select the column that uniquely identifies each user."
+        help="Select the column that uniquely identifies each user.",
     )
     location_default = (
         df.columns.get_loc(DEFAULT_LOCATION_COLUMN)
@@ -820,7 +922,7 @@ if file and validate_file(file):
         "Column with County/Location",
         options=df.columns,
         index=location_default,
-        help="Pick the column that indicates user location or segment."
+        help="Pick the column that indicates user location or segment.",
     )
 
     ft_options = [c for c in df.columns if c not in [user_id_col, location_col]]
@@ -829,43 +931,57 @@ if file and validate_file(file):
         "Free-text response columns",
         options=ft_options,
         default=ft_default,
-        help="These comments will be translated and categorised."
+        help="These comments will be translated and categorised.",
     )
 
     structured_cols = st.multiselect(
         "Structured question columns",
-        options=[c for c in df.columns if c not in free_text_cols + [user_id_col, location_col]],
-        default=[c for c in df.columns if c not in free_text_cols + [user_id_col, location_col]],
-        help="Responses to these columns will be summarised in pivot tables."
+        options=[
+            c
+            for c in df.columns
+            if c not in free_text_cols + [user_id_col, location_col]
+        ],
+        default=[
+            c
+            for c in df.columns
+            if c not in free_text_cols + [user_id_col, location_col]
+        ],
+        help="Responses to these columns will be summarised in pivot tables.",
     )
 
     preset_name = st.selectbox(
         "Predefined segment (optional)",
         ["None"] + list(PREDEFINED_SEGMENTS.keys()),
-        help="Automatically populate filters for common segments."
+        help="Automatically populate filters for common segments.",
     )
     preset = PREDEFINED_SEGMENTS.get(preset_name)
 
     segment_options = df[location_col].dropna().unique().tolist()
     preset_segments = []
     if preset:
-        preset_segments = [s for s in preset.get("location_values", []) if s in segment_options]
+        preset_segments = [
+            s for s in preset.get("location_values", []) if s in segment_options
+        ]
     selected_segments = st.multiselect(
         "Filter by segment (optional)",
         options=segment_options,
         default=preset_segments,
-        help="Choose segments to focus on or leave empty for all."
+        help="Choose segments to focus on or leave empty for all.",
     )
 
-    filter_col_options = [c for c in df.columns if c not in free_text_cols + [user_id_col, location_col]]
+    filter_col_options = [
+        c for c in df.columns if c not in free_text_cols + [user_id_col, location_col]
+    ]
     preset_filter_cols = []
     if preset:
-        preset_filter_cols = [c for c in preset.get("filters", {}) if c in filter_col_options]
+        preset_filter_cols = [
+            c for c in preset.get("filters", {}) if c in filter_col_options
+        ]
     addl_filter_cols = st.multiselect(
         "Additional segment columns to filter (optional)",
         options=filter_col_options,
         default=preset_filter_cols,
-        help="Select other columns like career type to filter by."
+        help="Select other columns like career type to filter by.",
     )
 
     addl_filters = {}
@@ -889,7 +1005,7 @@ if file and validate_file(file):
 
     if st.button(
         "Process Data",
-        help="Translate comments, categorise them and generate summaries."
+        help="Translate comments, categorise them and generate summaries.",
     ):
         if not validate_columns(
             user_id_col,
@@ -902,18 +1018,22 @@ if file and validate_file(file):
         # Apply filters before processing so only relevant rows are translated
         df_to_process = df
         if selected_segments:
-            df_to_process = df_to_process[df_to_process[location_col].isin(selected_segments)]
+            df_to_process = df_to_process[
+                df_to_process[location_col].isin(selected_segments)
+            ]
         for col, vals in addl_filters.items():
             df_to_process = df_to_process[df_to_process[col].isin(vals)]
 
         with st.spinner("Processing free-text responses..."):
             df_to_process = process_free_text(df_to_process, free_text_cols, cache_path)
-
-        df = df_to_process
-
         st.success("Processing complete")
 
-        df = review_translations(df, user_id_col)
+        df_to_process = review_translations(df_to_process, user_id_col)
+
+        full_df = st.session_state.get(
+            "processed_df", st.session_state.get("original_df", df)
+        ).copy()
+        df = merge_results(full_df, df_to_process, user_id_col)
         st.session_state["processed_df"] = df
         df.to_pickle(cache_path)
         if os.path.exists(partial_path):
@@ -941,53 +1061,52 @@ if file and validate_file(file):
                     pivot,
                     f"pivot_{col}.csv",
                     f"Download {col} CSV",
-                    help="Download the pivot table as a CSV file."
+                    help="Download the pivot table as a CSV file.",
                 )
             with c2:
                 export_excel(
                     pivot,
                     f"pivot_{col}.xlsx",
                     f"Download {col} Excel",
-                    help="Download the pivot table as an Excel file."
+                    help="Download the pivot table as an Excel file.",
                 )
 
         st.subheader("Categorized Comments")
         display_cols = [
             user_id_col,
             location_col,
-            'Concatenated',
-            'Translated',
-            'Language',
-            'Categories',
-            'ModelTokens',
-            'FinishReason',
-            'Flagged',
+            "Concatenated",
+            "Translated",
+            "Language",
+            "Categories",
+            "ModelTokens",
+            "FinishReason",
+            "Flagged",
         ]
         st.dataframe(analysis_df[display_cols])
         if st.button(
             "Spot-check 5 Random Comments",
-            help="Preview a random sample to verify AI results."
+            help="Preview a random sample to verify AI results.",
         ):
             sample = analysis_df.sample(min(5, len(analysis_df)))
             for _, row in sample.iterrows():
                 st.write(f"**User {row[user_id_col]}** - {row['Categories']}")
-                st.write(row['Translated'])
+                st.write(row["Translated"])
         download_link(
             analysis_df,
             "full_results.csv",
             "Download All Results",
-            help="Save the full dataset with translations and categories."
+            help="Save the full dataset with translations and categories.",
         )
         export_full_excel(
             analysis_df,
             "full_results.xlsx",
             "Download All Results Excel",
-            help="Save the full dataset as an Excel file."
+            help="Save the full dataset as an Excel file.",
         )
 
         if st.button(
-            "Generate Report",
-            help="Create a narrative summary of all findings."
+            "Generate Report", help="Create a narrative summary of all findings."
         ):
             segments_to_process = selected_segments if selected_segments else [None]
             zip_buffer = BytesIO()
@@ -1009,12 +1128,24 @@ if file and validate_file(file):
                     bar_chart(cat_pivot, f"{segment_title} Category Frequency")
                     st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
 
-                    report_text = generate_report(seg_df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
+                    report_text = generate_report(
+                        seg_df[
+                            [
+                                user_id_col,
+                                location_col,
+                                "Translated",
+                                "Categories",
+                                "Flagged",
+                            ]
+                        ]
+                    )
                     if not report_text:
                         continue
                     st.markdown(f"## Report for {segment_title}")
                     st.markdown(report_text)
-                    pivot_dict = {col: generate_pivot(seg_df, col) for col in structured_cols}
+                    pivot_dict = {
+                        col: generate_pivot(seg_df, col) for col in structured_cols
+                    }
                     pivot_dict["Category Frequency"] = cat_pivot
                     if not nps_pivot.empty:
                         pivot_dict["NPS Distribution"] = nps_pivot
@@ -1025,24 +1156,28 @@ if file and validate_file(file):
                             "Download DOCX",
                             docx_file,
                             f"{segment_title}_report.docx",
-                            help="Save the report as a Word document."
+                            help="Save the report as a Word document.",
                         )
                         st.download_button(
                             "Download PDF",
                             pdf_file,
                             f"{segment_title}_report.pdf",
-                            help="Save the report as a PDF file."
+                            help="Save the report as a PDF file.",
                         )
                     else:
-                        zipf.writestr(f"{segment_title}_report.docx", docx_file.getvalue())
-                        zipf.writestr(f"{segment_title}_report.pdf", pdf_file.getvalue())
+                        zipf.writestr(
+                            f"{segment_title}_report.docx", docx_file.getvalue()
+                        )
+                        zipf.writestr(
+                            f"{segment_title}_report.pdf", pdf_file.getvalue()
+                        )
             if len(selected_segments) > 1:
                 zip_buffer.seek(0)
                 st.download_button(
                     "Download Reports ZIP",
                     zip_buffer,
                     "reports.zip",
-                    help="Download all segment reports as a ZIP file."
+                    help="Download all segment reports as a ZIP file.",
                 )
 else:
     st.info("Upload a survey file to begin.")
