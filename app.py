@@ -100,6 +100,17 @@ EXCLUDED_STRUCTURED_COLUMNS = [
     "ModelTokens",
 ]
 
+# Order of scale options for usability questions
+RATING_ORDER = [
+    "Very Hard",
+    "Hard",
+    "Somewhat Hard",
+    "Neutral",
+    "Somewhat Easy",
+    "Easy",
+    "Very Easy",
+]
+
 # Predefined segment configurations used to auto-populate filters
 PREDEFINED_SEGMENTS = {
     "UK Parents": {
@@ -413,6 +424,42 @@ def safe_name(name: str) -> str:
     """Return a filesystem-friendly version of a name."""
     name = name.strip().replace(" ", "_")
     return re.sub(r"[^A-Za-z0-9_-]", "_", name)
+
+
+def usability_pivot(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """Return a pivot table of usability ratings across multiple columns."""
+    melted = df[columns].melt(var_name="Aspect", value_name="Rating").dropna()
+    pivot = pd.crosstab(melted["Aspect"], melted["Rating"])
+    pivot = pivot.reindex(columns=RATING_ORDER, fill_value=0)
+    pivot["Total"] = pivot.sum(axis=1)
+    pivot.reset_index(inplace=True)
+    return pivot
+
+
+def usability_chart(pivot: pd.DataFrame, title: str) -> BytesIO:
+    """Display a stacked bar chart for usability ratings."""
+    data = pivot.melt(id_vars="Aspect", var_name="Rating", value_name="Count")
+    data = data[data["Rating"] != "Total"]
+    chart = (
+        alt.Chart(data, background="white")
+        .mark_bar()
+        .encode(
+            x=alt.X("Aspect:N", title="Aspect"),
+            y=alt.Y("Count:Q", stack="normalize", title="Percent"),
+            color=alt.Color("Rating:N", sort=RATING_ORDER),
+            order=alt.Order("Rating:N", sort="ascending"),
+            tooltip=["Aspect", "Rating", "Count"],
+        )
+        .properties(title=f"{title} \U0001F4CA", height=300)
+        .configure_title(fontSize=22)
+        .configure_axis(labelFontSize=16, titleFontSize=18)
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+    buf = BytesIO()
+    chart.save(buf, format="png")
+    buf.seek(0)
+    return buf
 
 
 def category_frequency(df: pd.DataFrame) -> pd.DataFrame:
@@ -999,7 +1046,38 @@ if file and validate_file(file):
 
         st.subheader("Structured Data Analysis")
         zip_entries: list[tuple[str, bytes]] = []
-        for col in structured_cols:
+
+        usability_cols = [
+            c for c in structured_cols
+            if c.lower().startswith("6.") or "how easy" in c.lower()
+        ]
+        remaining_cols = [c for c in structured_cols if c not in usability_cols]
+
+        if usability_cols:
+            pivot = usability_pivot(analysis_df, usability_cols)
+            st.write("### Of the following areas, please rate how easy they are to use")
+            st.dataframe(pivot)
+            chart_buf = usability_chart(pivot, "Ease of Use")
+            c1, c2 = st.columns(2)
+            with c1:
+                download_link(
+                    pivot,
+                    "pivot_usability.csv",
+                    "Download Usability CSV",
+                    help="Download the combined usability table as CSV.",
+                )
+            with c2:
+                export_excel(
+                    pivot,
+                    "pivot_usability.xlsx",
+                    "Download Usability Excel",
+                    help="Download the combined usability table as Excel.",
+                )
+            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+            zip_entries.append(("Usability/table.csv", csv_bytes))
+            zip_entries.append(("Usability/chart.png", chart_buf.getvalue()))
+
+        for col in remaining_cols:
             pivot = generate_pivot(analysis_df, col)
             st.write(f"### {col}")
             st.dataframe(pivot)
