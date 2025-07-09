@@ -689,6 +689,9 @@ if file and validate_file(file):
         if df.isnull().all(axis=1).any():
             st.warning("Some rows contain only missing values")
 
+    if "original_df" not in st.session_state:
+        st.session_state["original_df"] = df.copy()
+
     st.subheader("Data Preview")
     st.dataframe(df.head(10))
     st.write(f"**Rows:** {df.shape[0]}  **Columns:** {df.shape[1]}")
@@ -721,8 +724,6 @@ if file and validate_file(file):
         "Filter by segment (optional)", options=segment_options,
         help="Choose segments to focus on or leave empty for all."
     )
-    if selected_segments:
-        df = df[df[location_col].isin(selected_segments)]
 
     with st.sidebar.expander("Category descriptions"):
         for cat, desc in CATEGORY_DESCRIPTIONS.items():
@@ -752,11 +753,16 @@ if file and validate_file(file):
             os.remove(partial_path)
 
         nps_col = next((c for c in structured_cols if "nps" in c.lower()), None)
-        display_summary(df, nps_col)
+
+        analysis_df = df
+        if selected_segments:
+            analysis_df = df[df[location_col].isin(selected_segments)]
+
+        display_summary(analysis_df, nps_col)
 
         st.subheader("Structured Data Analysis")
         for col in structured_cols:
-            pivot = generate_pivot(df, col)
+            pivot = generate_pivot(analysis_df, col)
             st.write(f"### {col}")
             st.dataframe(pivot)
             bar_chart(pivot, f"{col} Responses")
@@ -788,17 +794,17 @@ if file and validate_file(file):
             'FinishReason',
             'Flagged',
         ]
-        st.dataframe(df[display_cols])
+        st.dataframe(analysis_df[display_cols])
         if st.button(
             "Spot-check 5 Random Comments",
             help="Preview a random sample to verify AI results."
         ):
-            sample = df.sample(min(5, len(df)))
+            sample = analysis_df.sample(min(5, len(analysis_df)))
             for _, row in sample.iterrows():
                 st.write(f"**User {row[user_id_col]}** - {row['Categories']}")
                 st.write(row['Translated'])
         download_link(
-            df,
+            analysis_df,
             "full_results.csv",
             "Download All Results",
             help="Save the full dataset with translations and categories."
