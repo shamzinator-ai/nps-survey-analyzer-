@@ -531,11 +531,11 @@ file = st.sidebar.file_uploader(
 if file and validate_file(file):
     raw_bytes = file.getvalue()
     checksum = hashlib.md5(raw_bytes).hexdigest()
-    cache_path = os.path.join(CACHE_DIR, f"{checksum}.pkl")
+    cache_path = os.path.join(CACHE_DIR, f"{checksum}.parquet")
     if "processed_df" in st.session_state:
         df = st.session_state["processed_df"]
     elif os.path.exists(cache_path):
-        df = pd.read_pickle(cache_path)
+        df = pd.read_parquet(cache_path)
         st.success("Loaded cached processed data")
     else:
         try:
@@ -621,7 +621,7 @@ if file and validate_file(file):
 
         df = review_translations(df, user_id_col)
         st.session_state["processed_df"] = df
-        df.to_pickle(cache_path)
+        df.to_parquet(cache_path, index=False)
 
         nps_col = next((c for c in structured_cols if "nps" in c.lower()), None)
         display_summary(df, nps_col)

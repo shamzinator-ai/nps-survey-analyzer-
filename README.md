@@ -17,11 +17,13 @@ This repository contains a simple Streamlit application for analyzing NPS survey
 - Progress bars for long-running translation and categorization tasks.
 - Expandable comments for spot-checking AI results.
 - Language detection stored alongside translations.
+- Processed data is cached in the `cache` directory as Parquet files to speed up repeated analysis.
 
 ## Requirements
 
 - Python 3.12
 - An OpenAI API key set as the environment variable `OPENAI_API_KEY`.
+- [PyArrow](https://arrow.apache.org/docs/python/) for Parquet support.
 
 Install dependencies with:
 
