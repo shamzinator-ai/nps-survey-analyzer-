@@ -26,6 +26,7 @@ The question **"1: How likely are you to recommend Twinkl to a friend or colleag
 - Language detection stored alongside translations.
 - Intermediate results saved after each processing batch.
 - Automatically resume processing from the last completed row on startup.
+- Clear cached data for the uploaded survey using the **Clear Cached Data** button.
 
 ## Requirements
 
@@ -59,5 +60,6 @@ If the app fails to start or behaves unexpectedly, try the following:
    issues.
 3. **Large files** – the uploader accepts files up to 10MB.
 4. **Encoding issues** – save your CSV in UTF-8 format.
+5. **Stale results** – click **Clear Cached Data** in the sidebar to remove saved progress.
 
 For more help open an issue on GitHub.
