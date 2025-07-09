@@ -569,6 +569,8 @@ def safe_name(name: str) -> str:
 
 def category_frequency(df: pd.DataFrame) -> pd.DataFrame:
     """Return counts and percentages for all categories including blanks."""
+    if "Categories" not in df.columns:
+        return pd.DataFrame(columns=["Category", "Count", "Percent"])
 
     cat_lists: list[str] = []
     for cats in df["Categories"].fillna(""):
@@ -587,6 +589,8 @@ def category_frequency(df: pd.DataFrame) -> pd.DataFrame:
 
 def sentiment_metrics(df: pd.DataFrame) -> tuple[int, int]:
     """Return counts of positive and negative comments."""
+    if "Categories" not in df.columns:
+        return 0, 0
     pos = df["Categories"].str.contains("Positive Words", na=False).sum()
     neg = df["Categories"].str.contains("Negative Words", na=False).sum()
     return pos, neg
@@ -629,12 +633,11 @@ def display_summary(df: pd.DataFrame, nps_col: str | None):
         st.write("### NPS Distribution")
         st.dataframe(nps_pivot)
         bar_chart(nps_pivot, "NPS Distribution")
-    st.write("### Category Frequency")
-    st.dataframe(cat_pivot)
-    bar_chart(cat_pivot, "Category Frequency")
-
-    st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
     if not cat_pivot.empty:
+        st.write("### Category Frequency")
+        st.dataframe(cat_pivot)
+        bar_chart(cat_pivot, "Category Frequency")
+        st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
         st.write("Top 3 Issues:", ", ".join(cat_pivot.head(3)["Category"].tolist()))
 
 
@@ -1110,6 +1113,13 @@ if file and validate_file(file):
         for cat, desc in CATEGORY_DESCRIPTIONS.items():
             st.write(f"**{cat}** - {desc}")
 
+    analysis_mode = st.radio(
+        "Analysis mode",
+        ["Structured Data Only", "Free Text Only", "Both"],
+        index=2,
+        help="Choose which analysis steps to run",
+    )
+
     if st.button(
         "Process Data",
         help="Translate comments, categorise them and generate summaries."
@@ -1129,34 +1139,37 @@ if file and validate_file(file):
         for col, vals in addl_filters.items():
             df_to_process = df_to_process[df_to_process[col].isin(vals)]
 
-        with st.spinner("Processing free-text responses..."):
-            processed_subset = process_free_text(df_to_process, free_text_cols, cache_path)
+        if analysis_mode != "Structured Data Only":
+            with st.spinner("Processing free-text responses..."):
+                processed_subset = process_free_text(df_to_process, free_text_cols, cache_path)
 
-        # Merge processed rows back into the main dataframe so previously
-        # unprocessed English comments are retained for later analysis.
-        df.update(processed_subset)
+            # Merge processed rows back into the main dataframe so previously
+            # unprocessed English comments are retained for later analysis.
+            df.update(processed_subset)
 
-        st.success("Processing complete")
-        download_link(
-            df,
-            "full_results.csv",
-            "Download All Results",
-            help="Save the enriched data with translations and categories.",
-        )
-        export_full_excel(
-            df,
-            "full_results.xlsx",
-            "Download All Results Excel",
-            help="Save the enriched data as an Excel file.",
-        )
+            st.success("Processing complete")
+            download_link(
+                df,
+                "full_results.csv",
+                "Download All Results",
+                help="Save the enriched data with translations and categories.",
+            )
+            export_full_excel(
+                df,
+                "full_results.xlsx",
+                "Download All Results Excel",
+                help="Save the enriched data as an Excel file.",
+            )
 
-        processed_subset = review_translations(processed_subset, user_id_col)
-        # Persist edits back into the full DataFrame and cache
-        df.update(processed_subset)
-        st.session_state["processed_df"] = df
-        df.to_pickle(cache_path)
-        if os.path.exists(partial_path):
-            os.remove(partial_path)
+            processed_subset = review_translations(processed_subset, user_id_col)
+            # Persist edits back into the full DataFrame and cache
+            df.update(processed_subset)
+            st.session_state["processed_df"] = df
+            df.to_pickle(cache_path)
+            if os.path.exists(partial_path):
+                os.remove(partial_path)
+        else:
+            st.session_state["processed_df"] = df
 
         nps_col = next(
             (
@@ -1175,298 +1188,300 @@ if file and validate_file(file):
             analysis_df = analysis_df[analysis_df[col].isin(vals)]
 
         display_summary(analysis_df, nps_col)
-
-        st.subheader("Structured Data Analysis")
-        zip_entries: list[tuple[str, bytes]] = []
-
-        # Identify multi-select question groups by numeric prefix
-        pattern = re.compile(r"^(\d+)[\.:]")
-        groups: dict[str, list[str]] = {}
-        for col in structured_cols:
-            m = pattern.match(str(col))
-            if m:
-                groups.setdefault(m.group(1), []).append(col)
-
-        # Filter groups to only binary multi-select columns
-        groups = {
-            k: v
-            for k, v in groups.items()
-            if len(v) > 1
-            and all(
-                len(
-                    {
-                        str(x).strip().lower()
-                        for x in analysis_df[c].dropna().unique()
-                        if str(x).strip() != ""
-                    }
+        if analysis_mode != "Free Text Only":
+    
+            st.subheader("Structured Data Analysis")
+            zip_entries: list[tuple[str, bytes]] = []
+    
+            # Identify multi-select question groups by numeric prefix
+            pattern = re.compile(r"^(\d+)[\.:]")
+            groups: dict[str, list[str]] = {}
+            for col in structured_cols:
+                m = pattern.match(str(col))
+                if m:
+                    groups.setdefault(m.group(1), []).append(col)
+    
+            # Filter groups to only binary multi-select columns
+            groups = {
+                k: v
+                for k, v in groups.items()
+                if len(v) > 1
+                and all(
+                    len(
+                        {
+                            str(x).strip().lower()
+                            for x in analysis_df[c].dropna().unique()
+                            if str(x).strip() != ""
+                        }
+                    )
+                    <= 2
+                    for c in v
                 )
-                <= 2
-                for c in v
-            )
-        }
-
-        processed: set[str] = set()
-
-        ease_cols = [
-            c
-            for c in structured_cols
-            if re.match(r"^(6|14)[\.:]", str(c))
-        ]
-        if ease_cols:
-            pivot = rating_pivot(analysis_df, ease_cols, order=RATING_ORDER_EASE)
-            st.write("### Of the following areas, please rate how easy they were to use")
-            st.dataframe(pivot)
-            chart_buf = stacked_bar_chart(pivot, "Ease of Use by Area", order=RATING_ORDER_EASE)
-            c1, c2 = st.columns(2)
-            with c1:
-                download_link(
-                    pivot,
-                    "pivot_ease.csv",
-                    "Download Ease Question CSV",
-                    help="Download the pivot table as a CSV file.",
-                )
-            with c2:
-                export_excel(
-                    pivot,
-                    "pivot_ease.xlsx",
-                    "Download Ease Question Excel",
-                    help="Download the pivot table as an Excel file."
-                )
-            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
-            safe = safe_name("question_ease")
-            zip_entries.append((f"{safe}/table.csv", csv_bytes))
-            zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-            processed.update(ease_cols)
-
-        content_rating_cols = [c for c in structured_cols if str(c).startswith("8.")]
-        if content_rating_cols:
-            pivot = rating_pivot(analysis_df, content_rating_cols, order=CONTENT_RATING_ORDER)
-            st.write("### Please rate the following about our content")
-            st.dataframe(pivot)
-            chart_buf = stacked_bar_chart(pivot, "Content Ratings", order=CONTENT_RATING_ORDER)
-            c1, c2 = st.columns(2)
-            with c1:
-                download_link(
-                    pivot,
-                    "pivot_q8.csv",
-                    "Download Question 8 CSV",
-                    help="Download the pivot table as a CSV file.",
-                )
-            with c2:
-                export_excel(
-                    pivot,
-                    "pivot_q8.xlsx",
-                    "Download Question 8 Excel",
-                    help="Download the pivot table as an Excel file."
-                )
-            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
-            safe = safe_name("question_8")
-            zip_entries.append((f"{safe}/table.csv", csv_bytes))
-            zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-            processed.update(content_rating_cols)
-
-        satisfaction_cols = [c for c in structured_cols if str(c).startswith("12.")]
-        if satisfaction_cols:
-            pivot = combined_rating_pivot(analysis_df, satisfaction_cols, order=SATISFACTION_ORDER)
-            st.write("### How satisfied were you with the materials you created?")
-            st.dataframe(pivot)
-            chart_buf = bar_chart(pivot, "Satisfaction with Created Materials")
-            c1, c2 = st.columns(2)
-            with c1:
-                download_link(
-                    pivot,
-                    "pivot_q12.csv",
-                    "Download Question 12 CSV",
-                    help="Download the pivot table as a CSV file.",
-                )
-            with c2:
-                export_excel(
-                    pivot,
-                    "pivot_q12.xlsx",
-                    "Download Question 12 Excel",
-                    help="Download the pivot table as an Excel file."
-                )
-            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
-            safe = safe_name("question_12")
-            zip_entries.append((f"{safe}/table.csv", csv_bytes))
-            zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-            processed.update(satisfaction_cols)
-
-        importance_cols = [c for c in structured_cols if re.match(r"^21[\.:]", str(c))]
-        if importance_cols:
-            pivot = rating_pivot(analysis_df, importance_cols, order=IMPORTANCE_ORDER)
-            st.write("### Tell us how important the following are to you")
-            st.dataframe(pivot)
-            chart_buf = stacked_bar_chart(pivot, "Importance Ratings", order=IMPORTANCE_ORDER)
-            c1, c2 = st.columns(2)
-            with c1:
-                download_link(
-                    pivot,
-                    "pivot_q21.csv",
-                    "Download Question 21 CSV",
-                    help="Download the pivot table as a CSV file.",
-                )
-            with c2:
-                export_excel(
-                    pivot,
-                    "pivot_q21.xlsx",
-                    "Download Question 21 Excel",
-                    help="Download the pivot table as an Excel file.",
-                )
-            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
-            safe = safe_name("question_21")
-            zip_entries.append((f"{safe}/table.csv", csv_bytes))
-            zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-
-        for prefix, cols in groups.items():
-            question = MULTISELECT_QUESTION_TEXTS.get(prefix, f"Question {prefix}")
-            pivot = multiselect_pivot(analysis_df, cols)
-            st.write(f"### {question}")
-            st.dataframe(pivot)
-            chart_buf = bar_chart(pivot, f"{question} Responses")
-            c1, c2 = st.columns(2)
-            with c1:
-                download_link(
-                    pivot,
-                    f"pivot_q{prefix}.csv",
-                    f"Download Question {prefix} CSV",
-                    help="Download the pivot table as a CSV file.",
-                )
-            with c2:
-                export_excel(
-                    pivot,
-                    f"pivot_q{prefix}.xlsx",
-                    f"Download Question {prefix} Excel",
-                    help="Download the pivot table as an Excel file."
-                )
-            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
-            safe = safe_name(f"question_{prefix}")
-            zip_entries.append((f"{safe}/table.csv", csv_bytes))
-            zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-            processed.update(cols)
-
-        for col in structured_cols:
-            if col in processed:
-                continue
-            pivot = generate_pivot(analysis_df, col)
-            st.write(f"### {col}")
-            st.dataframe(pivot)
-            chart_buf = bar_chart(pivot, f"{col} Responses")
-            c1, c2 = st.columns(2)
-            with c1:
-                download_link(
-                    pivot,
-                    f"pivot_{col}.csv",
-                    f"Download {col} CSV",
-                    help="Download the pivot table as a CSV file.",
-                )
-            with c2:
-                export_excel(
-                    pivot,
-                    f"pivot_{col}.xlsx",
-                    f"Download {col} Excel",
-                    help="Download the pivot table as an Excel file."
-                )
-            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
-            safe = safe_name(col)
-            zip_entries.append((f"{safe}/table.csv", csv_bytes))
-            zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-
-        if zip_entries:
-            zip_buf = BytesIO()
-            with zipfile.ZipFile(zip_buf, "w") as zipf:
-                for name, data in zip_entries:
-                    zipf.writestr(name, data)
-            zip_buf.seek(0)
-            st.download_button(
-                "Download All Charts/Tables",
-                zip_buf,
-                "all_pivots.zip",
-                help="Download every pivot table CSV and chart PNG at once."
-            )
-
-        st.subheader("Categorized Comments")
-        display_cols = [
-            user_id_col,
-            location_col,
-            'Concatenated',
-            'Translated',
-            'Language',
-            'Categories',
-            'ModelTokens',
-            'FinishReason',
-            'Flagged',
-        ]
-        st.dataframe(analysis_df[display_cols])
-        if st.button(
-            "Spot-check 5 Random Comments",
-            help="Preview a random sample to verify AI results."
-        ):
-            sample = analysis_df.sample(min(5, len(analysis_df)))
-            for _, row in sample.iterrows():
-                st.write(f"**User {row[user_id_col]}** - {row['Categories']}")
-                st.write(row['Translated'])
-
-        if st.button(
-            "Generate Report",
-            help="Create a narrative summary of all findings."
-        ):
-            segments_to_process = selected_segments if selected_segments else [None]
-            zip_buffer = BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w") as zipf:
-                for segment in segments_to_process:
-                    seg_df = df if segment is None else df[df[location_col] == segment]
-                    for col, vals in addl_filters.items():
-                        seg_df = seg_df[seg_df[col].isin(vals)]
-                    if seg_df.empty:
-                        continue
-                    segment_title = segment if segment is not None else "All"
-
-                    st.markdown(f"## KPIs for {segment_title}")
-                    nps_pivot, cat_pivot, (pos, neg), nps_score = compute_kpis(seg_df, nps_col)
-                    if nps_score is not None:
-                        st.metric("NPS Score", nps_score)
-                    if not nps_pivot.empty:
-                        st.dataframe(nps_pivot)
-                        bar_chart(nps_pivot, f"{segment_title} NPS Distribution")
-                    st.dataframe(cat_pivot)
-                    bar_chart(cat_pivot, f"{segment_title} Category Frequency")
-                    st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
-
-                    report_text = generate_report(seg_df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
-                    if not report_text:
-                        continue
-                    st.markdown(f"## Report for {segment_title}")
-                    st.markdown(report_text)
-                    pivot_dict = {col: generate_pivot(seg_df, col) for col in structured_cols}
-                    pivot_dict["Category Frequency"] = cat_pivot
-                    if not nps_pivot.empty:
-                        pivot_dict["NPS Distribution"] = nps_pivot
-                    docx_file = save_docx(report_text, pivot_dict)
-                    pdf_file = save_pdf(report_text, pivot_dict)
-                    if len(selected_segments) <= 1:
-                        st.download_button(
-                            "Download DOCX",
-                            docx_file,
-                            f"{segment_title}_report.docx",
-                            help="Save the report as a Word document."
-                        )
-                        st.download_button(
-                            "Download PDF",
-                            pdf_file,
-                            f"{segment_title}_report.pdf",
-                            help="Save the report as a PDF file."
-                        )
-                    else:
-                        zipf.writestr(f"{segment_title}_report.docx", docx_file.getvalue())
-                        zipf.writestr(f"{segment_title}_report.pdf", pdf_file.getvalue())
-            if len(selected_segments) > 1:
-                zip_buffer.seek(0)
+            }
+    
+            processed: set[str] = set()
+    
+            ease_cols = [
+                c
+                for c in structured_cols
+                if re.match(r"^(6|14)[\.:]", str(c))
+            ]
+            if ease_cols:
+                pivot = rating_pivot(analysis_df, ease_cols, order=RATING_ORDER_EASE)
+                st.write("### Of the following areas, please rate how easy they were to use")
+                st.dataframe(pivot)
+                chart_buf = stacked_bar_chart(pivot, "Ease of Use by Area", order=RATING_ORDER_EASE)
+                c1, c2 = st.columns(2)
+                with c1:
+                    download_link(
+                        pivot,
+                        "pivot_ease.csv",
+                        "Download Ease Question CSV",
+                        help="Download the pivot table as a CSV file.",
+                    )
+                with c2:
+                    export_excel(
+                        pivot,
+                        "pivot_ease.xlsx",
+                        "Download Ease Question Excel",
+                        help="Download the pivot table as an Excel file."
+                    )
+                csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+                safe = safe_name("question_ease")
+                zip_entries.append((f"{safe}/table.csv", csv_bytes))
+                zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                processed.update(ease_cols)
+    
+            content_rating_cols = [c for c in structured_cols if str(c).startswith("8.")]
+            if content_rating_cols:
+                pivot = rating_pivot(analysis_df, content_rating_cols, order=CONTENT_RATING_ORDER)
+                st.write("### Please rate the following about our content")
+                st.dataframe(pivot)
+                chart_buf = stacked_bar_chart(pivot, "Content Ratings", order=CONTENT_RATING_ORDER)
+                c1, c2 = st.columns(2)
+                with c1:
+                    download_link(
+                        pivot,
+                        "pivot_q8.csv",
+                        "Download Question 8 CSV",
+                        help="Download the pivot table as a CSV file.",
+                    )
+                with c2:
+                    export_excel(
+                        pivot,
+                        "pivot_q8.xlsx",
+                        "Download Question 8 Excel",
+                        help="Download the pivot table as an Excel file."
+                    )
+                csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+                safe = safe_name("question_8")
+                zip_entries.append((f"{safe}/table.csv", csv_bytes))
+                zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                processed.update(content_rating_cols)
+    
+            satisfaction_cols = [c for c in structured_cols if str(c).startswith("12.")]
+            if satisfaction_cols:
+                pivot = combined_rating_pivot(analysis_df, satisfaction_cols, order=SATISFACTION_ORDER)
+                st.write("### How satisfied were you with the materials you created?")
+                st.dataframe(pivot)
+                chart_buf = bar_chart(pivot, "Satisfaction with Created Materials")
+                c1, c2 = st.columns(2)
+                with c1:
+                    download_link(
+                        pivot,
+                        "pivot_q12.csv",
+                        "Download Question 12 CSV",
+                        help="Download the pivot table as a CSV file.",
+                    )
+                with c2:
+                    export_excel(
+                        pivot,
+                        "pivot_q12.xlsx",
+                        "Download Question 12 Excel",
+                        help="Download the pivot table as an Excel file."
+                    )
+                csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+                safe = safe_name("question_12")
+                zip_entries.append((f"{safe}/table.csv", csv_bytes))
+                zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                processed.update(satisfaction_cols)
+    
+            importance_cols = [c for c in structured_cols if re.match(r"^21[\.:]", str(c))]
+            if importance_cols:
+                pivot = rating_pivot(analysis_df, importance_cols, order=IMPORTANCE_ORDER)
+                st.write("### Tell us how important the following are to you")
+                st.dataframe(pivot)
+                chart_buf = stacked_bar_chart(pivot, "Importance Ratings", order=IMPORTANCE_ORDER)
+                c1, c2 = st.columns(2)
+                with c1:
+                    download_link(
+                        pivot,
+                        "pivot_q21.csv",
+                        "Download Question 21 CSV",
+                        help="Download the pivot table as a CSV file.",
+                    )
+                with c2:
+                    export_excel(
+                        pivot,
+                        "pivot_q21.xlsx",
+                        "Download Question 21 Excel",
+                        help="Download the pivot table as an Excel file.",
+                    )
+                csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+                safe = safe_name("question_21")
+                zip_entries.append((f"{safe}/table.csv", csv_bytes))
+                zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+    
+            for prefix, cols in groups.items():
+                question = MULTISELECT_QUESTION_TEXTS.get(prefix, f"Question {prefix}")
+                pivot = multiselect_pivot(analysis_df, cols)
+                st.write(f"### {question}")
+                st.dataframe(pivot)
+                chart_buf = bar_chart(pivot, f"{question} Responses")
+                c1, c2 = st.columns(2)
+                with c1:
+                    download_link(
+                        pivot,
+                        f"pivot_q{prefix}.csv",
+                        f"Download Question {prefix} CSV",
+                        help="Download the pivot table as a CSV file.",
+                    )
+                with c2:
+                    export_excel(
+                        pivot,
+                        f"pivot_q{prefix}.xlsx",
+                        f"Download Question {prefix} Excel",
+                        help="Download the pivot table as an Excel file."
+                    )
+                csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+                safe = safe_name(f"question_{prefix}")
+                zip_entries.append((f"{safe}/table.csv", csv_bytes))
+                zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                processed.update(cols)
+    
+            for col in structured_cols:
+                if col in processed:
+                    continue
+                pivot = generate_pivot(analysis_df, col)
+                st.write(f"### {col}")
+                st.dataframe(pivot)
+                chart_buf = bar_chart(pivot, f"{col} Responses")
+                c1, c2 = st.columns(2)
+                with c1:
+                    download_link(
+                        pivot,
+                        f"pivot_{col}.csv",
+                        f"Download {col} CSV",
+                        help="Download the pivot table as a CSV file.",
+                    )
+                with c2:
+                    export_excel(
+                        pivot,
+                        f"pivot_{col}.xlsx",
+                        f"Download {col} Excel",
+                        help="Download the pivot table as an Excel file."
+                    )
+                csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+                safe = safe_name(col)
+                zip_entries.append((f"{safe}/table.csv", csv_bytes))
+                zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+    
+            if zip_entries:
+                zip_buf = BytesIO()
+                with zipfile.ZipFile(zip_buf, "w") as zipf:
+                    for name, data in zip_entries:
+                        zipf.writestr(name, data)
+                zip_buf.seek(0)
                 st.download_button(
-                    "Download Reports ZIP",
-                    zip_buffer,
-                    "reports.zip",
-                    help="Download all segment reports as a ZIP file."
-                )
+                    "Download All Charts/Tables",
+                    zip_buf,
+                    "all_pivots.zip",
+                    help="Download every pivot table CSV and chart PNG at once."
+            )
+
+        if analysis_mode != "Structured Data Only":
+            st.subheader("Categorized Comments")
+            display_cols = [
+                user_id_col,
+                location_col,
+                'Concatenated',
+                'Translated',
+                'Language',
+                'Categories',
+                'ModelTokens',
+                'FinishReason',
+                'Flagged',
+            ]
+            st.dataframe(analysis_df[display_cols])
+            if st.button(
+                "Spot-check 5 Random Comments",
+                help="Preview a random sample to verify AI results."
+            ):
+                sample = analysis_df.sample(min(5, len(analysis_df)))
+                for _, row in sample.iterrows():
+                    st.write(f"**User {row[user_id_col]}** - {row['Categories']}")
+                    st.write(row['Translated'])
+    
+            if st.button(
+                "Generate Report",
+                help="Create a narrative summary of all findings."
+            ):
+                segments_to_process = selected_segments if selected_segments else [None]
+                zip_buffer = BytesIO()
+                with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                    for segment in segments_to_process:
+                        seg_df = df if segment is None else df[df[location_col] == segment]
+                        for col, vals in addl_filters.items():
+                            seg_df = seg_df[seg_df[col].isin(vals)]
+                        if seg_df.empty:
+                            continue
+                        segment_title = segment if segment is not None else "All"
+    
+                        st.markdown(f"## KPIs for {segment_title}")
+                        nps_pivot, cat_pivot, (pos, neg), nps_score = compute_kpis(seg_df, nps_col)
+                        if nps_score is not None:
+                            st.metric("NPS Score", nps_score)
+                        if not nps_pivot.empty:
+                            st.dataframe(nps_pivot)
+                            bar_chart(nps_pivot, f"{segment_title} NPS Distribution")
+                        st.dataframe(cat_pivot)
+                        bar_chart(cat_pivot, f"{segment_title} Category Frequency")
+                        st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
+    
+                        report_text = generate_report(seg_df[[user_id_col, location_col, 'Translated', 'Categories', 'Flagged']])
+                        if not report_text:
+                            continue
+                        st.markdown(f"## Report for {segment_title}")
+                        st.markdown(report_text)
+                        pivot_dict = {col: generate_pivot(seg_df, col) for col in structured_cols}
+                        pivot_dict["Category Frequency"] = cat_pivot
+                        if not nps_pivot.empty:
+                            pivot_dict["NPS Distribution"] = nps_pivot
+                        docx_file = save_docx(report_text, pivot_dict)
+                        pdf_file = save_pdf(report_text, pivot_dict)
+                        if len(selected_segments) <= 1:
+                            st.download_button(
+                                "Download DOCX",
+                                docx_file,
+                                f"{segment_title}_report.docx",
+                                help="Save the report as a Word document."
+                            )
+                            st.download_button(
+                                "Download PDF",
+                                pdf_file,
+                                f"{segment_title}_report.pdf",
+                                help="Save the report as a PDF file."
+                            )
+                        else:
+                            zipf.writestr(f"{segment_title}_report.docx", docx_file.getvalue())
+                            zipf.writestr(f"{segment_title}_report.pdf", pdf_file.getvalue())
+                if len(selected_segments) > 1:
+                    zip_buffer.seek(0)
+                    st.download_button(
+                        "Download Reports ZIP",
+                        zip_buffer,
+                        "reports.zip",
+                        help="Download all segment reports as a ZIP file."
+                    )
 else:
     st.info("Upload a survey file to begin.")
