@@ -1122,6 +1122,12 @@ if file and validate_file(file):
         help="Choose which analysis steps to run",
     )
 
+    show_comments = st.checkbox(
+        "Show detailed comments",
+        value=True,
+        help="Display each comment with its categories for manual review.",
+    )
+
     if st.button(
         "Process Data",
         help="Translate comments, categorise them and generate summaries."
@@ -1163,7 +1169,10 @@ if file and validate_file(file):
                 help="Save the enriched data as an Excel file.",
             )
 
-            processed_subset = review_translations(processed_subset, user_id_col)
+            if show_comments:
+                processed_subset = review_translations(
+                    processed_subset, user_id_col
+                )
             # Persist edits back into the full DataFrame and cache
             df.update(processed_subset)
             st.session_state["processed_df"] = df
@@ -1401,7 +1410,7 @@ if file and validate_file(file):
                     help="Download every pivot table CSV and chart PNG at once."
             )
 
-        if analysis_mode != "Structured Data Only":
+        if analysis_mode != "Structured Data Only" and show_comments:
             st.subheader("Categorized Comments")
             display_cols = [
                 user_id_col,
