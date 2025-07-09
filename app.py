@@ -880,12 +880,12 @@ def process_free_text(
     restarted.
     """
 
-    concat = [
-        " ".join(str(row[c]) if pd.notnull(row[c]) else "" for c in free_text_cols)
-        for _, row in df.iterrows()
-    ]
-
-    df["Concatenated"] = concat
+    concat_series = (
+        df[free_text_cols]
+        .fillna("")
+        .apply(lambda r: " ".join(str(x) for x in r), axis=1)
+    )
+    df["Concatenated"] = concat_series
 
     # Ensure output columns exist
     for col, default in [
@@ -900,7 +900,12 @@ def process_free_text(
             df[col] = default
 
     # Determine which rows still need processing
-    to_process = [i for i, t in enumerate(df["Translated"]) if not isinstance(t, str) or not t.strip()]
+    to_process = [
+        idx
+        for idx in df.index
+        if not isinstance(df.at[idx, "Translated"], str)
+        or not str(df.at[idx, "Translated"]).strip()
+    ]
 
     progress = st.progress(0.0, text="Starting...")
     start_time = time.time()
@@ -909,7 +914,7 @@ def process_free_text(
 
     for batch_start in range(0, len(to_process), batch_size):
         batch_indices = to_process[batch_start : batch_start + batch_size]
-        batch_texts = [concat[i] for i in batch_indices]
+        batch_texts = [df.at[idx, "Concatenated"] for idx in batch_indices]
 
         trans_lang = asyncio.run(async_translate_batch(batch_texts))
         batch_trans = [t for t, _, _, _ in trans_lang]
