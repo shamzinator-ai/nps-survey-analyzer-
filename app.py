@@ -18,6 +18,7 @@ from docx.shared import Inches
 from fpdf import FPDF
 import tempfile
 import zipfile
+import uuid
 
 # Set your OpenAI API key via environment variable
 # Use an environment variable if available but also allow entering the API key
@@ -495,6 +496,7 @@ def stacked_bar_chart(
             png_buffer,
             file_name=f"{title}.png",
             mime="image/png",
+            key=unique_key(f"{title}_png"),
         )
     with col2:
         st.download_button(
@@ -502,6 +504,7 @@ def stacked_bar_chart(
             svg_bytes,
             file_name=f"{title}.svg",
             mime="image/svg+xml",
+            key=unique_key(f"{title}_svg"),
         )
     return png_buffer
 
@@ -563,6 +566,7 @@ def bar_chart(pivot: pd.DataFrame, title: str) -> BytesIO:
             png_buffer,
             file_name=f"{title}.png",
             mime="image/png",
+            key=unique_key(f"{title}_png"),
         )
     with col2:
         st.download_button(
@@ -570,6 +574,7 @@ def bar_chart(pivot: pd.DataFrame, title: str) -> BytesIO:
             svg_bytes,
             file_name=f"{title}.svg",
             mime="image/svg+xml",
+            key=unique_key(f"{title}_svg"),
         )
 
     return png_buffer
@@ -579,6 +584,11 @@ def safe_name(name: str) -> str:
     """Return a filesystem-friendly version of a name."""
     name = name.strip().replace(" ", "_")
     return re.sub(r"[^A-Za-z0-9_-]", "_", name)
+
+
+def unique_key(name: str) -> str:
+    """Return a unique key for Streamlit widgets based on the provided name."""
+    return f"{safe_name(name)}_{uuid.uuid4().hex}"
 
 
 def category_frequency(df: pd.DataFrame) -> pd.DataFrame:
@@ -658,7 +668,14 @@ def display_summary(df: pd.DataFrame, nps_col: str | None):
 
 def download_link(df: pd.DataFrame, filename: str, label: str, help: str | None = None):
     csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button(label, csv, file_name=filename, mime='text/csv', help=help)
+    st.download_button(
+        label,
+        csv,
+        file_name=filename,
+        mime='text/csv',
+        help=help,
+        key=unique_key(filename),
+    )
 
 
 def export_excel(df: pd.DataFrame, filename: str, label: str, help: str | None = None):
@@ -672,6 +689,7 @@ def export_excel(df: pd.DataFrame, filename: str, label: str, help: str | None =
         file_name=filename,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         help=help,
+        key=unique_key(filename),
     )
 
 
@@ -686,6 +704,7 @@ def export_full_excel(df: pd.DataFrame, filename: str, label: str, help: str | N
         file_name=filename,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         help=help,
+        key=unique_key(filename),
     )
 
 
@@ -1420,8 +1439,9 @@ if file and validate_file(file):
                     "Download All Charts/Tables",
                     zip_buf,
                     "all_pivots.zip",
-                    help="Download every pivot table CSV and chart PNG at once."
-            )
+                    help="Download every pivot table CSV and chart PNG at once.",
+                    key=unique_key("all_pivots_zip"),
+                )
 
         if analysis_mode != "Structured Data Only" and show_comments:
             st.subheader("Categorized Comments")
@@ -1489,13 +1509,15 @@ if file and validate_file(file):
                                 "Download DOCX",
                                 docx_file,
                                 f"{segment_title}_report.docx",
-                                help="Save the report as a Word document."
+                                help="Save the report as a Word document.",
+                                key=unique_key(f"{segment_title}_docx"),
                             )
                             st.download_button(
                                 "Download PDF",
                                 pdf_file,
                                 f"{segment_title}_report.pdf",
-                                help="Save the report as a PDF file."
+                                help="Save the report as a PDF file.",
+                                key=unique_key(f"{segment_title}_pdf"),
                             )
                         else:
                             zipf.writestr(f"{segment_title}_report.docx", docx_file.getvalue())
@@ -1506,7 +1528,8 @@ if file and validate_file(file):
                         "Download Reports ZIP",
                         zip_buffer,
                         "reports.zip",
-                        help="Download all segment reports as a ZIP file."
+                        help="Download all segment reports as a ZIP file.",
+                        key=unique_key("reports_zip"),
                     )
 else:
     st.info("Upload a survey file to begin.")
