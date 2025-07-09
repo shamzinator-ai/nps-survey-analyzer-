@@ -482,18 +482,20 @@ def stacked_bar_chart(
     if order is None:
         order = RATING_ORDER_EASE
 
+    # Pre-wrap aspect labels to avoid JavaScript expressions which break during
+    # PNG conversion. Replace spaces with newline characters prior to plotting.
+    pivot = pivot.copy()
+    if "Aspect" in pivot.columns:
+        pivot["Aspect_wrapped"] = pivot["Aspect"].str.replace(" ", "\n")
+
     chart = (
         alt.Chart(pivot, background="white")
         .mark_bar()
         .encode(
             x=alt.X(
-                "Aspect:N",
+                "Aspect_wrapped:N",
                 title="Aspect",
-                axis=alt.Axis(
-                    labelAngle=0,
-                    labelExpr="datum.label.split(' ').join('\n')",
-                    labelLimit=200,
-                ),
+                axis=alt.Axis(labelAngle=0, labelLimit=200),
             ),
             y=alt.Y(
                 "Count:Q",
@@ -550,6 +552,12 @@ def create_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None
     if "Response" in pivot.columns:
         pivot = pivot[pivot["Response"] != "Total"]
 
+    # Pre-wrap labels to avoid using JavaScript expressions which can fail
+    # during PNG conversion in vl-convert. Replace spaces with newline
+    # characters before plotting.
+    if "Response" in pivot.columns:
+        pivot["Response_wrapped"] = pivot["Response"].str.replace(" ", "\n")
+
     enc_color = alt.Color(
         "Count:Q",
         scale=alt.Scale(range=color_range),
@@ -567,14 +575,10 @@ def create_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None
         .mark_bar()
         .encode(
             x=alt.X(
-                "Response:N",
+                "Response_wrapped:N",
                 sort="-y",
                 title="Response",
-                axis=alt.Axis(
-                    labelAngle=0,
-                    labelExpr="datum.label.split(' ').join('\n')",
-                    labelLimit=200,
-                ),
+                axis=alt.Axis(labelAngle=0, labelLimit=200),
             ),
             y=alt.Y("Count:Q", title="Count"),
             color=enc_color,
