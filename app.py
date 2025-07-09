@@ -859,8 +859,17 @@ if file and validate_file(file):
         ):
             st.stop()
         partial_path = cache_path.replace(".pkl", "_partial.pkl")
+        # Apply filters before processing so only relevant rows are translated
+        df_to_process = df
+        if selected_segments:
+            df_to_process = df_to_process[df_to_process[location_col].isin(selected_segments)]
+        for col, vals in addl_filters.items():
+            df_to_process = df_to_process[df_to_process[col].isin(vals)]
+
         with st.spinner("Processing free-text responses..."):
-            df = process_free_text(df, free_text_cols, cache_path)
+            df_to_process = process_free_text(df_to_process, free_text_cols, cache_path)
+
+        df = df_to_process
 
         st.success("Processing complete")
 
