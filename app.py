@@ -1317,7 +1317,7 @@ if file and validate_file(file):
 
     show_comments = st.checkbox(
         "Show detailed comments",
-        value=True,
+        value=False,
         help="Display each comment with its categories for manual review.",
     )
 
