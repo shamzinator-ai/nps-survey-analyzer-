@@ -1030,7 +1030,10 @@ def apply_style():
         """
         <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
         <style>
-            html, body, [class*="css"]  { font-family: 'Roboto', sans-serif; }
+            html, body, [class*="css"]  {
+                font-family: 'Roboto', sans-serif;
+                color: #000;
+            }
             [data-testid="stAppViewContainer"] {
                 background: linear-gradient(135deg, #f4f8fb 0%, #e0ecff 100%);
                 height: 100vh;
@@ -1064,7 +1067,7 @@ apply_style()
 
 # Sidebar toggle to switch to black text and blue buttons
 if "contrast_mode" not in st.session_state:
-    st.session_state["contrast_mode"] = False
+    st.session_state["contrast_mode"] = True
 
 contrast_toggle = st.sidebar.toggle(
     "Black text and blue buttons",
