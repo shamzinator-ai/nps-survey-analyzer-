@@ -156,6 +156,15 @@ CATEGORY_DESCRIPTIONS = {
     "Positive Words": "Use of positive language or sentiment",
 }
 
+# Map prefixes for multi-select questions to the full question text
+MULTISELECT_QUESTION_TEXTS = {
+    "5": (
+        "We\u2019d love to hear more about what matters to you. "
+        "Please select which areas you wish to give feedback on. "
+        "Your time is valuable so we'll only ask questions about these topics."
+    )
+}
+
 # ----------------------------- Utility Functions -----------------------------
 
 def detect_language_offline(text: str) -> str:
@@ -338,6 +347,20 @@ def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
     total_row = pd.DataFrame({"Response": ["Total"], "Count": [total], "Percent": [100.0]})
     pivot = pd.concat([pivot, total_row], ignore_index=True)
     return pivot
+
+
+def multiselect_pivot(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+    """Aggregate binary multi-select columns into a single pivot."""
+    rows = []
+    for col in columns:
+        label = re.sub(r"^\d+[\.:]\s*", "", col).strip()
+        count = df[col].fillna(0).astype(float).sum()
+        rows.append({"Response": label, "Count": int(count)})
+    pivot = pd.DataFrame(rows)
+    total = pivot["Count"].sum()
+    pivot["Percent"] = (pivot["Count"] / total * 100).round(1)
+    total_row = pd.DataFrame({"Response": ["Total"], "Count": [total], "Percent": [100.0]})
+    return pd.concat([pivot, total_row], ignore_index=True)
 
 
 def create_chart(pivot: pd.DataFrame, title: str):
@@ -999,7 +1022,58 @@ if file and validate_file(file):
 
         st.subheader("Structured Data Analysis")
         zip_entries: list[tuple[str, bytes]] = []
+
+        # Identify multi-select question groups by numeric prefix
+        pattern = re.compile(r"^(\d+)[\.:]")
+        groups: dict[str, list[str]] = {}
         for col in structured_cols:
+            m = pattern.match(str(col))
+            if m:
+                groups.setdefault(m.group(1), []).append(col)
+
+        # Filter groups to only binary multi-select columns
+        groups = {
+            k: v
+            for k, v in groups.items()
+            if len(v) > 1
+            and all(
+                set(str(x).strip() for x in analysis_df[c].dropna().unique()) <= {"0", "1"}
+                for c in v
+            )
+        }
+
+        processed: set[str] = set()
+
+        for prefix, cols in groups.items():
+            question = MULTISELECT_QUESTION_TEXTS.get(prefix, f"Question {prefix}")
+            pivot = multiselect_pivot(analysis_df, cols)
+            st.write(f"### {question}")
+            st.dataframe(pivot)
+            chart_buf = bar_chart(pivot, f"{question} Responses")
+            c1, c2 = st.columns(2)
+            with c1:
+                download_link(
+                    pivot,
+                    f"pivot_q{prefix}.csv",
+                    f"Download Question {prefix} CSV",
+                    help="Download the pivot table as a CSV file.",
+                )
+            with c2:
+                export_excel(
+                    pivot,
+                    f"pivot_q{prefix}.xlsx",
+                    f"Download Question {prefix} Excel",
+                    help="Download the pivot table as an Excel file."
+                )
+            csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+            safe = safe_name(f"question_{prefix}")
+            zip_entries.append((f"{safe}/table.csv", csv_bytes))
+            zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+            processed.update(cols)
+
+        for col in structured_cols:
+            if col in processed:
+                continue
             pivot = generate_pivot(analysis_df, col)
             st.write(f"### {col}")
             st.dataframe(pivot)
