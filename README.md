@@ -16,6 +16,7 @@ This repository contains a simple Streamlit application for analyzing NPS survey
 - Reports include pivot tables and bar chart images.
 - When multiple segments are selected, generate a report for each and download all DOCX/PDF files in a ZIP.
 - Progress bars for long-running translation and categorization tasks.
+- Uses OpenAI's async client for faster batch processing.
 - Expandable comments for spot-checking AI results.
 - Language detection stored alongside translations.
 - Intermediate results saved after each processing batch.
@@ -25,6 +26,7 @@ This repository contains a simple Streamlit application for analyzing NPS survey
 
 - Python 3.12
 - An OpenAI API key set as the environment variable `OPENAI_API_KEY`.
+- `openai` package version 1.0 or newer for the async client.
 
 Install dependencies with:
 
