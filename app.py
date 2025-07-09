@@ -207,11 +207,6 @@ CATEGORY_DESCRIPTIONS = {
 
 # Map prefixes for multi-select questions to the full question text
 MULTISELECT_QUESTION_TEXTS = {
-    "5": (
-        "We\u2019d love to hear more about what matters to you. "
-        "Please select which areas you wish to give feedback on. "
-        "Your time is valuable so we'll only ask questions about these topics."
-    ),
     "11": ("Have you ever created your own content on the website? " "(Choose all that apply)"),
 }
 
@@ -1247,6 +1242,8 @@ if file and validate_file(file):
         if c not in free_text_cols + [user_id_col, location_col]
         and c not in EXCLUDED_STRUCTURED_COLUMNS
         and "unnamed" not in str(c).lower()
+        and not str(c).startswith("5.")
+        and not str(c).startswith("5:")
     ]
     structured_cols = st.multiselect(
         "Structured question columns",
@@ -1256,7 +1253,13 @@ if file and validate_file(file):
     )
 
     # Skip any columns accidentally selected that contain 'Unnamed'
-    structured_cols = [c for c in structured_cols if "unnamed" not in str(c).lower()]
+    structured_cols = [
+        c
+        for c in structured_cols
+        if "unnamed" not in str(c).lower()
+        and not str(c).startswith("5.")
+        and not str(c).startswith("5:")
+    ]
 
     preset_name = st.selectbox(
         "Predefined segment (optional)",
@@ -1398,7 +1401,7 @@ if file and validate_file(file):
             groups: dict[str, list[str]] = {}
             for col in structured_cols:
                 m = pattern.match(str(col))
-                if m:
+                if m and m.group(1) != "5":
                     groups.setdefault(m.group(1), []).append(col)
 
             # Filter groups to only binary multi-select columns
