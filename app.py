@@ -1353,15 +1353,15 @@ if file and validate_file(file):
             st.success("Processing complete")
             download_link(
                 df,
-                "full_results.csv",
-                "Download All Results",
-                help="Save the enriched data with translations and categories.",
+                "enriched_results.csv",
+                "Download Enriched Dataset CSV",
+                help="Save the processed data including translations and categories.",
             )
             export_full_excel(
                 df,
-                "full_results.xlsx",
-                "Download All Results Excel",
-                help="Save the enriched data as an Excel file.",
+                "enriched_results.xlsx",
+                "Download Enriched Dataset Excel",
+                help="Save the processed data as an Excel workbook.",
             )
 
             if show_comments:
@@ -1391,6 +1391,21 @@ if file and validate_file(file):
             analysis_df = analysis_df[analysis_df[col].isin(vals)]
 
         display_summary(analysis_df, nps_col)
+
+        st.subheader("Download Enriched Dataset")
+        download_link(
+            df,
+            "enriched_results.csv",
+            "Download Enriched Dataset CSV",
+            help="Save the processed data including translations and categories.",
+        )
+        export_full_excel(
+            df,
+            "enriched_results.xlsx",
+            "Download Enriched Dataset Excel",
+            help="Save the processed data as an Excel workbook.",
+        )
+
         if analysis_mode != "Free Text Only":
             st.subheader("Structured Data Analysis")
             zip_entries: list[tuple[str, bytes]] = []
