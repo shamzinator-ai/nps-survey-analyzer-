@@ -901,7 +901,7 @@ def export_excel(df: pd.DataFrame, filename: str, label: str, help: str | None =
 
 
 def export_full_excel(df: pd.DataFrame, filename: str, label: str, help: str | None = None):
-    """Download the entire processed DataFrame as an Excel file."""
+    """Download the provided DataFrame as an Excel file."""
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False)
@@ -1644,16 +1644,16 @@ if file and validate_file(file):
 
         st.subheader("Download Enriched Dataset")
         download_link(
-            processed_df,
+            analysis_df,
             "enriched_results.csv",
             "Download Enriched Dataset CSV",
-            help="Save the processed data including translations and categories.",
+            help="Save the processed filtered data including translations and categories.",
         )
         export_full_excel(
-            processed_df,
+            analysis_df,
             "enriched_results.xlsx",
             "Download Enriched Dataset Excel",
-            help="Save the processed data as an Excel workbook.",
+            help="Save the processed filtered data as an Excel workbook.",
         )
 
         if analysis_mode != "Free Text Only":
