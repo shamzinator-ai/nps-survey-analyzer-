@@ -808,7 +808,9 @@ def display_summary(df: pd.DataFrame, nps_col: str | None):
     if not cat_pivot.empty:
         st.write("### Category Frequency")
         st.dataframe(cat_pivot)
-        bar_chart(cat_pivot, "Category Frequency")
+        cat_chart = cat_pivot[cat_pivot["Category"] != "Uncategorized"]
+        if not cat_chart.empty:
+            bar_chart(cat_chart, "Category Frequency")
         st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
         st.write("Top 3 Issues:", ", ".join(cat_pivot.head(3)["Category"].tolist()))
 
@@ -1891,7 +1893,9 @@ if file and validate_file(file):
                             st.dataframe(nps_pivot)
                             bar_chart(nps_pivot, f"{segment_title} NPS Distribution")
                         st.dataframe(cat_pivot)
-                        bar_chart(cat_pivot, f"{segment_title} Category Frequency")
+                        cat_chart = cat_pivot[cat_pivot["Category"] != "Uncategorized"]
+                        if not cat_chart.empty:
+                            bar_chart(cat_chart, f"{segment_title} Category Frequency")
                         st.metric("Positive/Negative Ratio", f"{pos}:{neg}")
 
                         report_text = generate_report(
