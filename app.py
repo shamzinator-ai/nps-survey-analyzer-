@@ -1116,7 +1116,23 @@ def process_free_text(
         Number of rows to process concurrently in each batch.
     """
 
-    df["Concatenated"] = concat_series(df, free_text_cols)
+    new_concat = concat_series(df, free_text_cols)
+    if "Concatenated" in df.columns:
+        changed_mask = new_concat != df["Concatenated"]
+        if changed_mask.any():
+            for col, default in [
+                ("Translated", ""),
+                ("Language", ""),
+                ("Categories", ""),
+                ("CategoryReasoning", ""),
+                ("OriginalCategories", ""),
+                ("OriginalCategoryReasoning", ""),
+                ("ModelTokens", 0),
+                ("FinishReason", ""),
+            ]:
+                if col in df.columns:
+                    df.loc[changed_mask, col] = default
+    df["Concatenated"] = new_concat
 
     # Ensure output columns exist
     for col, default in [
