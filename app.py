@@ -270,6 +270,14 @@ IMPORTANCE_ORDER = [
 # Generic numeric 1-5 order used when the data contains only numbers
 IMPORTANCE_ORDER_NUMERIC = ["1", "2", "3", "4", "5"]
 
+# Rating order for question 16 customer service comparison
+SERVICE_COMPARE_ORDER = [
+    "It's far better",
+    "It's about the same",
+    "It's slightly better",
+    "It's worse",
+]
+
 # Color palettes for rating scales: negatives=pink, neutral=yellow, positives=blue
 NEGATIVE_COLORS = ["#ffb3c6", "#ff7aa9", "#ff4d94"]
 NEUTRAL_COLOR = "#ffd966"
@@ -1745,7 +1753,51 @@ if file and validate_file(file):
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
                 pdf_pivots[question_text] = pivot
-                processed.update(satisfaction_cols)
+
+            processed.update(satisfaction_cols)
+
+            service_compare_cols = [
+                c
+                for c in structured_cols
+                if re.match(r"^16[\.:]", str(c))
+            ]
+            if service_compare_cols:
+                pivot = combined_rating_pivot(
+                    analysis_df,
+                    service_compare_cols,
+                    order=SERVICE_COMPARE_ORDER,
+                )
+                question_text = (
+                    "How does our customer service compare to other companies you've used?"
+                )
+                st.write(f"### {question_text}")
+                st.dataframe(pivot)
+                chart_buf = bar_chart(
+                    pivot,
+                    "Customer Service Comparison",
+                    order=SERVICE_COMPARE_ORDER,
+                )
+                c1, c2 = st.columns(2)
+                with c1:
+                    download_link(
+                        pivot,
+                        "pivot_q16.csv",
+                        "Download Question 16 CSV",
+                        help="Download the pivot table as a CSV file.",
+                    )
+                with c2:
+                    export_excel(
+                        pivot,
+                        "pivot_q16.xlsx",
+                        "Download Question 16 Excel",
+                        help="Download the pivot table as an Excel file.",
+                    )
+                csv_bytes = pivot.to_csv(index=False).encode("utf-8")
+                safe = safe_name("question_16")
+                zip_entries.append((f"{safe}/table.csv", csv_bytes))
+                zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
+                pdf_pivots[question_text] = pivot
+                processed.update(service_compare_cols)
 
             importance_cols = [c for c in structured_cols if re.match(r"^21[\.:]", str(c))]
             if importance_cols:
