@@ -1332,9 +1332,10 @@ if file and validate_file(file):
         help="Display each comment with its categories for manual review.",
     )
 
-    if st.button(
+    process_clicked = st.button(
         "Process Data", help="Translate comments, categorise them and generate summaries."
-    ):
+    )
+    if process_clicked:
         if not validate_columns(
             user_id_col,
             location_col,
@@ -1359,18 +1360,6 @@ if file and validate_file(file):
             df.update(processed_subset)
 
             st.success("Processing complete")
-            download_link(
-                df,
-                "enriched_results.csv",
-                "Download Enriched Dataset CSV",
-                help="Save the processed data including translations and categories.",
-            )
-            export_full_excel(
-                df,
-                "enriched_results.xlsx",
-                "Download Enriched Dataset Excel",
-                help="Save the processed data as an Excel workbook.",
-            )
 
             if show_comments:
                 processed_subset = review_translations(processed_subset, user_id_col)
@@ -1383,6 +1372,8 @@ if file and validate_file(file):
         else:
             st.session_state["processed_df"] = df
 
+    processed_df = st.session_state.get("processed_df")
+    if processed_df is not None:
         nps_col = next(
             (
                 c
@@ -1392,7 +1383,7 @@ if file and validate_file(file):
             None,
         )
 
-        analysis_df = df
+        analysis_df = processed_df
         if selected_segments:
             analysis_df = analysis_df[analysis_df[location_col].isin(selected_segments)]
         for col, vals in addl_filters.items():
@@ -1402,13 +1393,13 @@ if file and validate_file(file):
 
         st.subheader("Download Enriched Dataset")
         download_link(
-            df,
+            processed_df,
             "enriched_results.csv",
             "Download Enriched Dataset CSV",
             help="Save the processed data including translations and categories.",
         )
         export_full_excel(
-            df,
+            processed_df,
             "enriched_results.xlsx",
             "Download Enriched Dataset Excel",
             help="Save the processed data as an Excel workbook.",
