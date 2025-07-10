@@ -40,3 +40,19 @@ def test_concat_series_warns_on_blank_column(monkeypatch):
     result = utils.concat_series(df, ["a", "b"])
     assert result.tolist() == [" hello", " world"]
     st.warning.assert_called_once()
+
+
+def test_concat_series_multiple_columns(monkeypatch):
+    df = pd.DataFrame(
+        {
+            "a": ["foo", None],
+            "b": ["bar", ""],
+            "c": [None, "baz"],
+        }
+    )
+    st = MagicMock()
+    monkeypatch.setattr(utils, "st", st)
+    result = utils.concat_series(df, ["a", "b", "c"])
+    assert result.tolist() == ["foo bar ", "  baz"]
+    st.error.assert_not_called()
+    st.warning.assert_not_called()
