@@ -1815,6 +1815,13 @@ if file and validate_file(file):
                     help="Download all analysis results as a single PDF.",
                     key=unique_key("all_pivots_pdf"),
                 )
+                st.download_button(
+                    "Download all graphs/tables on a PDF",
+                    pdf_buf_all,
+                    "graphs_tables.pdf",
+                    help="Download all graphs and pivot tables in a single PDF.",
+                    key=unique_key("graphs_tables_pdf"),
+                )
                 pdf_buf_charts = save_pdf(
                     "NPS Survey Charts",
                     pdf_pivots,
