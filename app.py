@@ -20,6 +20,7 @@ from fpdf import FPDF
 import tempfile
 import zipfile
 import uuid
+from utils import concat_series
 
 # Set your OpenAI API key via environment variable
 # Use an environment variable if available but also allow entering the API key
@@ -1037,10 +1038,7 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str], cache_path: s
     restarted.
     """
 
-    concat_series = (
-        df[free_text_cols].fillna("").apply(lambda r: " ".join(str(x) for x in r), axis=1)
-    )
-    df["Concatenated"] = concat_series
+    df["Concatenated"] = concat_series(df, free_text_cols)
 
     # Ensure output columns exist
     for col, default in [
