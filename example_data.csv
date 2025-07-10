@@ -1,4 +1,4 @@
-User_ID,Country,NPS_Score,Recommend,Comments,Additional
-1,USA,10,Yes,"Great resource! I love it","No issues"
-2,Germany,5,No,"Zu teuer, nicht gut","Konnte mich nicht anmelden"
-3,Brazil,8,Maybe,"Bom recurso, mas precisa de melhorias","Preços altos"
+User_ID,Country,NPS_Score,Recommend,Comments,Additional,11: Yes, using AI,11: Yes, by requesting changes,11: Yes, by using Twinkl Create or Twinkl Symbols,11: No
+1,USA,10,Yes,"Great resource! I love it","No issues",1,0,0,0
+2,Germany,5,No,"Zu teuer, nicht gut","Konnte mich nicht anmelden",0,1,0,0
+3,Brazil,8,Maybe,"Bom recurso, mas precisa de melhorias","Preços altos",0,0,1,0
