@@ -33,6 +33,9 @@ openai.api_key = st.session_state["api_key"]
 openai_async = openai.AsyncOpenAI(api_key=openai.api_key)
 DEBUG = os.getenv("DEBUG", "0") == "1"
 
+if "pdf_pivots" not in st.session_state:
+    st.session_state["pdf_pivots"] = None
+
 if not openai.api_key:
     st.sidebar.warning("Please enter your OpenAI API key to continue.")
     key_input = st.sidebar.text_input("OpenAI API Key", type="password")
@@ -1331,6 +1334,16 @@ if file and validate_file(file):
         help="Choose which analysis steps to run",
     )
 
+    if st.session_state.get("pdf_pivots"):
+        pdf_buf = save_pdf("NPS Survey Charts and Tables", st.session_state["pdf_pivots"])
+        st.download_button(
+            "Download Charts PDF",
+            pdf_buf,
+            "charts_summary.pdf",
+            help="Download a PDF containing all charts with question text.",
+            key=unique_key("charts_pdf_summary"),
+        )
+
     show_comments = st.checkbox(
         "Show detailed comments",
         value=False,
@@ -1650,6 +1663,7 @@ if file and validate_file(file):
                 )
             if pdf_pivots:
                 pdf_buf = save_pdf("NPS Survey Charts and Tables", pdf_pivots)
+                st.session_state["pdf_pivots"] = pdf_pivots
                 st.download_button(
                     "Download Everything PDF",
                     pdf_buf,
