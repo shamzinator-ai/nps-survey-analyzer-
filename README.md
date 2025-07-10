@@ -11,7 +11,7 @@ The question **"1: How likely are you to recommend Twinkl to a friend or colleag
 - AI-driven categorization into a predefined list of categories.
 - Pivot tables with percentages and bar charts for structured questions.
 - Binary multi-select columns with values 0 or 1 are grouped into a single pivot table.
-- High-level summary dashboard showing NPS score, distribution, category frequency and sentiment ratio.
+- High-level summary dashboard showing NPS score, distribution and category frequency.
 - Displays the number of rows after filters are applied.
 - These KPIs and charts are shown before the detailed report for quick insight.
 - Downloadable results and pivot tables.
