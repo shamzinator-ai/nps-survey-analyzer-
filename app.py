@@ -3,6 +3,7 @@ import json
 from io import BytesIO, StringIO
 import re
 from typing import List, Tuple
+import textwrap
 import time
 import asyncio
 import hashlib
@@ -278,6 +279,11 @@ def rating_colors(order: List[str]) -> List[str]:
     return ["#ff66b3", "#3399ff"]
 
 
+def wrap_text(text: str, width: int = 20) -> str:
+    """Return text wrapped with newline characters at the given width."""
+    return "\n".join(textwrap.wrap(str(text), width=width))
+
+
 # ----------------------------- Utility Functions -----------------------------
 
 
@@ -534,10 +540,10 @@ def stacked_bar_chart(pivot: pd.DataFrame, title: str, order: List[str] | None =
         order = RATING_ORDER_EASE
 
     # Pre-wrap aspect labels to avoid JavaScript expressions which break during
-    # PNG conversion. Replace spaces with newline characters prior to plotting.
+    # PNG conversion. Insert newline characters to wrap long text.
     pivot = pivot.copy()
     if "Aspect" in pivot.columns:
-        pivot["Aspect_wrapped"] = pivot["Aspect"].str.replace(" ", "\n")
+        pivot["Aspect_wrapped"] = pivot["Aspect"].apply(wrap_text)
 
     chart = (
         alt.Chart(pivot, background="white")
@@ -546,7 +552,7 @@ def stacked_bar_chart(pivot: pd.DataFrame, title: str, order: List[str] | None =
             x=alt.X(
                 "Aspect_wrapped:N",
                 title="Aspect",
-                axis=alt.Axis(labelAngle=0, labelLimit=200),
+                axis=alt.Axis(labelAngle=0, labelLimit=0),
             ),
             y=alt.Y(
                 "Count:Q",
@@ -606,9 +612,8 @@ def create_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None
         pivot = pivot[pivot["Response"] != "Total"]
 
         # Pre-wrap labels to avoid using JavaScript expressions which can fail
-        # during PNG conversion in vl-convert. Replace spaces with newline
-        # characters before plotting.
-        pivot["Response_wrapped"] = pivot["Response"].astype(str).str.replace(" ", "\n")
+        # during PNG conversion in vl-convert. Wrap long text with newlines.
+        pivot["Response_wrapped"] = pivot["Response"].astype(str).apply(wrap_text)
 
     enc_color = alt.Color(
         "Count:Q",
@@ -630,7 +635,7 @@ def create_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None
                 "Response_wrapped:N",
                 sort="-y",
                 title="Response",
-                axis=alt.Axis(labelAngle=0, labelLimit=200),
+                axis=alt.Axis(labelAngle=0, labelLimit=0),
             ),
             y=alt.Y("Count:Q", title="Count"),
             color=enc_color,
