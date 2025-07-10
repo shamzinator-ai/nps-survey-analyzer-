@@ -712,6 +712,44 @@ def chart_png(pivot: pd.DataFrame, title: str, order: List[str] | None = None) -
     return buf
 
 
+def stacked_chart_png(
+    pivot: pd.DataFrame, title: str, order: List[str] | None = None
+) -> BytesIO:
+    """Return a PNG image buffer for a stacked bar chart."""
+    if order is None:
+        order = RATING_ORDER_EASE
+
+    pivot = pivot.copy()
+    if "Aspect" in pivot.columns:
+        pivot["Aspect_display"] = pivot["Aspect"].apply(truncate_label)
+
+    chart = (
+        alt.Chart(pivot, background="white")
+        .mark_bar()
+        .encode(
+            x=alt.X(
+                "Aspect_display:N",
+                title="Aspect",
+                axis=alt.Axis(labelAngle=-90, labelLimit=0),
+            ),
+            y=alt.Y("Count:Q", stack="normalize", axis=alt.Axis(format="%"), title="Percent"),
+            color=alt.Color(
+                "Rating:N",
+                sort=order,
+                scale=alt.Scale(domain=order, range=rating_colors(order)),
+            ),
+            tooltip=["Rating", "Count"],
+        )
+        .properties(title=f"{title} \U0001F4CA", height=300)
+        .configure_title(fontSize=22)
+        .configure_axis(labelFontSize=16, titleFontSize=18)
+    )
+    buf = BytesIO()
+    chart.save(buf, format="png")
+    buf.seek(0)
+    return buf
+
+
 def bar_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None) -> BytesIO:
     """Display a bar chart and provide PNG/SVG downloads. Returns PNG buffer."""
     chart = create_chart(pivot, title, order=order)
@@ -1060,7 +1098,7 @@ def save_docx(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
 
 def save_pdf(
     text: str,
-    pivots: dict[str, pd.DataFrame],
+    pivots: dict[str, pd.DataFrame | tuple[pd.DataFrame, BytesIO]],
     include_charts: bool = True,
     include_tables: bool = True,
 ) -> BytesIO:
@@ -1070,8 +1108,9 @@ def save_pdf(
     ----------
     text : str
         Introductory text to display at the top of the PDF.
-    pivots : dict[str, pd.DataFrame]
-        Mapping of question titles to pivot DataFrames.
+    pivots : dict[str, pd.DataFrame | tuple[pd.DataFrame, BytesIO]]
+        Mapping of question titles to pivot DataFrames or tuples of
+        (DataFrame, pre-rendered chart image).
     include_charts : bool, optional
         Include chart images under each question, by default ``True``.
     include_tables : bool, optional
@@ -1084,7 +1123,11 @@ def save_pdf(
     for line in text.split("\n"):
         pdf.multi_cell(0, 10, line)
 
-    for title, pivot in pivots.items():
+    for title, pivot_info in pivots.items():
+        if isinstance(pivot_info, tuple):
+            pivot, chart_buf = pivot_info
+        else:
+            pivot, chart_buf = pivot_info, None
         pdf.ln(5)
         pdf.set_font("Arial", "B", 12)
         pdf.cell(0, 10, title, ln=True)
@@ -1102,7 +1145,13 @@ def save_pdf(
                     pdf.cell(w, 8, str(row[h]), border=1)
                 pdf.ln()
         if include_charts:
-            img = chart_png(pivot, f"{title} Responses")
+            if chart_buf is None:
+                if {"Aspect", "Rating"}.issubset(pivot.columns):
+                    img = stacked_chart_png(pivot, f"{title} Responses")
+                else:
+                    img = chart_png(pivot, f"{title} Responses")
+            else:
+                img = chart_buf
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 tmp.write(img.getvalue())
                 tmp.flush()
@@ -1622,7 +1671,7 @@ if file and validate_file(file):
         if analysis_mode != "Free Text Only":
             st.subheader("Structured Data Analysis")
             zip_entries: list[tuple[str, bytes]] = []
-            pdf_pivots: dict[str, pd.DataFrame] = {}
+            pdf_pivots: dict[str, tuple[pd.DataFrame, BytesIO]] = {}
 
             # Identify multi-select question groups by numeric prefix
             pattern = re.compile(r"^(\d+)[\.:]")
@@ -1678,7 +1727,7 @@ if file and validate_file(file):
                 safe = safe_name("question_ease")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-                pdf_pivots[question_text] = pivot
+                pdf_pivots[question_text] = (pivot, chart_buf)
                 processed.update(ease_cols)
 
             content_rating_cols = [c for c in structured_cols if str(c).startswith("8.")]
@@ -1707,7 +1756,7 @@ if file and validate_file(file):
                 safe = safe_name("question_8")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-                pdf_pivots[question_text] = pivot
+                pdf_pivots[question_text] = (pivot, chart_buf)
                 processed.update(content_rating_cols)
 
             satisfaction_cols = [
@@ -1744,7 +1793,7 @@ if file and validate_file(file):
                 safe = safe_name("question_12")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-                pdf_pivots[question_text] = pivot
+                pdf_pivots[question_text] = (pivot, chart_buf)
                 processed.update(satisfaction_cols)
 
             importance_cols = [c for c in structured_cols if re.match(r"^21[\.:]", str(c))]
@@ -1785,7 +1834,7 @@ if file and validate_file(file):
                 safe = safe_name("question_21")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-                pdf_pivots[question_text] = pivot
+                pdf_pivots[question_text] = (pivot, chart_buf)
 
             for prefix, cols in groups.items():
                 question = MULTISELECT_QUESTION_TEXTS.get(prefix, f"Question {prefix}")
@@ -1812,7 +1861,7 @@ if file and validate_file(file):
                 safe = safe_name(f"question_{prefix}")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-                pdf_pivots[question] = pivot
+                pdf_pivots[question] = (pivot, chart_buf)
                 processed.update(cols)
 
             for col in structured_cols:
@@ -1843,7 +1892,7 @@ if file and validate_file(file):
                 safe = safe_name(col)
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-                pdf_pivots[question_text] = pivot
+                pdf_pivots[question_text] = (pivot, chart_buf)
 
             if zip_entries:
                 zip_buf = BytesIO()
