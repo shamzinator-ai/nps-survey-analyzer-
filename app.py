@@ -582,7 +582,7 @@ def stacked_bar_chart(pivot: pd.DataFrame, title: str, order: List[str] | None =
             x=alt.X(
                 "Aspect_wrapped:N",
                 title="Aspect",
-                axis=alt.Axis(labelAngle=0, labelLimit=0),
+                axis=alt.Axis(labelAngle=-90, labelLimit=0),
             ),
             y=alt.Y(
                 "Count:Q",
