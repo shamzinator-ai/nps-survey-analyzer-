@@ -296,6 +296,12 @@ def wrap_text(text: str, width: int = 20) -> str:
     return "\n".join(textwrap.wrap(str(text), width=width))
 
 
+def truncate_label(text: str, length: int = 10) -> str:
+    """Return text truncated to the given length with ellipsis if needed."""
+    text = str(text)
+    return text[:length] + "..." if len(text) > length else text
+
+
 # ----------------------------- Utility Functions -----------------------------
 
 
@@ -584,18 +590,17 @@ def stacked_bar_chart(pivot: pd.DataFrame, title: str, order: List[str] | None =
     if order is None:
         order = RATING_ORDER_EASE
 
-    # Pre-wrap aspect labels to avoid JavaScript expressions which break during
-    # PNG conversion. Insert newline characters to wrap long text.
+    # Truncate aspect labels for display
     pivot = pivot.copy()
     if "Aspect" in pivot.columns:
-        pivot["Aspect_wrapped"] = pivot["Aspect"].apply(wrap_text)
+        pivot["Aspect_display"] = pivot["Aspect"].apply(truncate_label)
 
     chart = (
         alt.Chart(pivot, background="white")
         .mark_bar()
         .encode(
             x=alt.X(
-                "Aspect_wrapped:N",
+                "Aspect_display:N",
                 title="Aspect",
                 axis=alt.Axis(labelAngle=-90, labelLimit=0),
             ),
@@ -617,6 +622,10 @@ def stacked_bar_chart(pivot: pd.DataFrame, title: str, order: List[str] | None =
         .configure_axis(labelFontSize=16, titleFontSize=18)
     )
     st.altair_chart(chart, use_container_width=True)
+
+    if "Aspect" in pivot.columns:
+        labels_order = pivot["Aspect"].astype(str).drop_duplicates().tolist()
+        st.caption("Data label order: " + ", ".join(labels_order))
 
     png_buffer = BytesIO()
     chart.save(png_buffer, format="png")
@@ -656,9 +665,8 @@ def create_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None
         # Remove any total row so it doesn't appear as its own bar
         pivot = pivot[pivot["Response"] != "Total"]
 
-        # Pre-wrap labels to avoid using JavaScript expressions which can fail
-        # during PNG conversion in vl-convert. Wrap long text with newlines.
-        pivot["Response_wrapped"] = pivot["Response"].astype(str).apply(wrap_text)
+        # Truncate labels to 10 characters with ellipsis for display
+        pivot["Response_display"] = pivot["Response"].apply(truncate_label)
 
     enc_color = alt.Color(
         "Count:Q",
@@ -677,7 +685,7 @@ def create_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None
         .mark_bar()
         .encode(
             x=alt.X(
-                "Response_wrapped:N",
+                "Response_display:N",
                 sort="-y",
                 title="Response",
                 axis=alt.Axis(labelAngle=0, labelLimit=0),
@@ -706,6 +714,15 @@ def bar_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None) -
     """Display a bar chart and provide PNG/SVG downloads. Returns PNG buffer."""
     chart = create_chart(pivot, title, order=order)
     st.altair_chart(chart, use_container_width=True)
+
+    if "Response" in pivot.columns:
+        labels_order = (
+            pivot[pivot["Response"] != "Total"]
+            .sort_values("Count", ascending=False)["Response"]
+            .astype(str)
+            .tolist()
+        )
+        st.caption("Data label order: " + ", ".join(labels_order))
 
     png_buffer = BytesIO()
     chart.save(png_buffer, format="png")
