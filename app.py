@@ -462,7 +462,7 @@ def multiselect_pivot(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
     for col in columns:
         label = re.sub(r"^\d+[\.:]\s*", "", col).strip()
         values = df[col].fillna("")
-        yes_vals = {"1", "true", "yes", "checked"}
+        yes_vals = {"1", "1.0", "true", "yes", "checked"}
         count = sum(str(v).strip().lower() in yes_vals for v in values)
         rows.append({"Response": label, "Count": int(count)})
     pivot = pd.DataFrame(rows)
