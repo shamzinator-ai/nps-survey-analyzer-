@@ -15,8 +15,8 @@ The question **"1: How likely are you to recommend Twinkl to a friend or colleag
 - Displays the number of rows after filters are applied.
 - These KPIs and charts are shown before the detailed report for quick insight.
 - Downloadable results and pivot tables.
-- Download all charts and tables as a single PDF.
-- Generate a narrative report and download it as a DOCX or PDF file.
+- Use the **Download Everything PDF** button to save all charts, tables and the report in one file.
+- Generate a narrative report and download it as a DOCX or via **Download Everything PDF**.
 - Filter data by multiple segment columns at once (e.g., Country and Career Type).
 - Quickly apply predefined segment filters such as **UK Parents** or **US Teachers**.
 - Filters are applied before translation and analysis to save time and API usage.
