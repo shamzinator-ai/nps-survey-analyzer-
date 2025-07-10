@@ -29,6 +29,8 @@ The question **"1: How likely are you to recommend Twinkl to a friend or colleag
 - Uses OpenAI's async client for faster batch processing.
 - Expandable comments for spot-checking AI results.
 - Language detection stored alongside translations.
+- Categories are generated for the original text and for the English
+  translation with editable reasoning.
 - Intermediate results saved after each processing batch.
 - Automatically resume processing from the last completed row on startup.
 - Clear cached data for the uploaded survey using the **Clear Cached Data** button.
