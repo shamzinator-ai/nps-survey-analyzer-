@@ -970,8 +970,10 @@ def save_docx(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
     return bio
 
 
-def save_pdf(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
-    """Save text, pivot tables and charts as a PDF."""
+def save_pdf(
+    text: str, pivots: dict[str, pd.DataFrame], include_charts: bool = True
+) -> BytesIO:
+    """Save text and pivot tables as a PDF, optionally including charts."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(True, margin=15)
@@ -995,12 +997,13 @@ def save_pdf(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
                 w = col_widths[i] if i < len(col_widths) else 30
                 pdf.cell(w, 8, str(row[h]), border=1)
             pdf.ln()
-        img = chart_png(pivot, f"{title} Responses")
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            tmp.write(img.getvalue())
-            tmp.flush()
-            pdf.image(tmp.name, w=180)
-        os.unlink(tmp.name)
+        if include_charts:
+            img = chart_png(pivot, f"{title} Responses")
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                tmp.write(img.getvalue())
+                tmp.flush()
+                pdf.image(tmp.name, w=180)
+            os.unlink(tmp.name)
 
     # Generate PDF bytes and write them to a BytesIO buffer
     pdf_bytes = pdf.output(dest="S").encode("latin-1")
@@ -1335,13 +1338,25 @@ if file and validate_file(file):
     )
 
     if st.session_state.get("pdf_pivots"):
-        pdf_buf = save_pdf("NPS Survey Charts and Tables", st.session_state["pdf_pivots"])
+        pdf_buf_charts = save_pdf(
+            "NPS Survey Charts and Tables", st.session_state["pdf_pivots"]
+        )
         st.download_button(
             "Download Charts PDF",
-            pdf_buf,
+            pdf_buf_charts,
             "charts_summary.pdf",
             help="Download a PDF containing all charts with question text.",
             key=unique_key("charts_pdf_summary"),
+        )
+        pdf_buf_tables = save_pdf(
+            "NPS Survey Tables", st.session_state["pdf_pivots"], include_charts=False
+        )
+        st.download_button(
+            "Download Tables PDF",
+            pdf_buf_tables,
+            "tables_summary.pdf",
+            help="Download a PDF with each pivot table and its question.",
+            key=unique_key("tables_pdf_summary"),
         )
 
     show_comments = st.checkbox(
@@ -1671,6 +1686,16 @@ if file and validate_file(file):
                     help="Download all analysis results as a single PDF.",
                     key=unique_key("all_pivots_pdf"),
                 )
+                pdf_tables = save_pdf(
+                    "NPS Survey Tables", pdf_pivots, include_charts=False
+                )
+                st.download_button(
+                    "Download Tables PDF",
+                    pdf_tables,
+                    "all_tables.pdf",
+                    help="Download every pivot table with its question text.",
+                    key=unique_key("all_tables_pdf"),
+                )
 
         if analysis_mode != "Structured Data Only" and show_comments:
             st.subheader("Categorized Comments")
@@ -1733,6 +1758,9 @@ if file and validate_file(file):
                             pivot_dict["NPS Distribution"] = nps_pivot
                         docx_file = save_docx(report_text, pivot_dict)
                         pdf_file = save_pdf(report_text, pivot_dict)
+                        pdf_tables = save_pdf(
+                            report_text, pivot_dict, include_charts=False
+                        )
                         if len(selected_segments) <= 1:
                             st.download_button(
                                 "Download DOCX",
@@ -1748,9 +1776,19 @@ if file and validate_file(file):
                                 help="Download the full report with tables and charts as a PDF.",
                                 key=unique_key(f"{segment_title}_pdf"),
                             )
+                            st.download_button(
+                                "Download Tables PDF",
+                                pdf_tables,
+                                f"{segment_title}_tables.pdf",
+                                help="PDF containing each pivot table with question text only.",
+                                key=unique_key(f"{segment_title}_tables_pdf"),
+                            )
                         else:
                             zipf.writestr(f"{segment_title}_report.docx", docx_file.getvalue())
                             zipf.writestr(f"{segment_title}_report.pdf", pdf_file.getvalue())
+                            zipf.writestr(
+                                f"{segment_title}_tables.pdf", pdf_tables.getvalue()
+                            )
                 if len(selected_segments) > 1:
                     zip_buffer.seek(0)
                     st.download_button(
