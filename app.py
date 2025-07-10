@@ -790,6 +790,11 @@ def unique_key(name: str) -> str:
     return f"{safe_name(name)}_{uuid.uuid4().hex}"
 
 
+def latin1_safe(text: str) -> str:
+    """Return ``text`` with characters replaced to be compatible with latin-1."""
+    return str(text).encode("latin-1", "replace").decode("latin-1")
+
+
 def category_frequency(df: pd.DataFrame) -> pd.DataFrame:
     """Return counts and percentages for all categories including blanks."""
     if "Categories" not in df.columns:
@@ -1117,7 +1122,7 @@ def save_pdf(
     pdf.set_auto_page_break(True, margin=15)
     pdf.set_font("Arial", size=12)
     for line in text.split("\n"):
-        pdf.multi_cell(0, 10, line)
+        pdf.multi_cell(0, 10, latin1_safe(line))
 
     for title, value in pivots.items():
         if isinstance(value, tuple):
@@ -1126,19 +1131,19 @@ def save_pdf(
             pivot, chart_buf = value, None
         pdf.ln(5)
         pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 10, title, ln=True)
+        pdf.cell(0, 10, latin1_safe(title), ln=True)
         if include_tables:
             pdf.set_font("Arial", size=10)
             col_widths = [80, 30, 30]
             headers = list(pivot.columns)
             for i, h in enumerate(headers):
                 w = col_widths[i] if i < len(col_widths) else 30
-                pdf.cell(w, 8, str(h), border=1)
+                pdf.cell(w, 8, latin1_safe(h), border=1)
             pdf.ln()
             for _, row in pivot.iterrows():
                 for i, h in enumerate(headers):
                     w = col_widths[i] if i < len(col_widths) else 30
-                    pdf.cell(w, 8, str(row[h]), border=1)
+                    pdf.cell(w, 8, latin1_safe(row[h]), border=1)
                 pdf.ln()
         if include_charts:
             if chart_buf is not None:
