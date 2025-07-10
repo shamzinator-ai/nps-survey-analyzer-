@@ -1496,6 +1496,15 @@ if file and validate_file(file):
         help="Number of comments to process at once",
     )
 
+    process_filtered_only = st.sidebar.checkbox(
+        "Process only filtered rows",
+        value=False,
+        help=(
+            "If selected, only rows matching the segment and filter selections"
+            " will be translated and categorised."
+        ),
+    )
+
     if st.session_state.get("pdf_pivots"):
         pdf_buf_charts = save_pdf(
             "NPS Survey Charts", st.session_state["pdf_pivots"],
@@ -1537,12 +1546,12 @@ if file and validate_file(file):
         ):
             st.stop()
         partial_path = cache_path.replace(".pkl", "_partial.pkl")
-        # Apply filters before processing so only relevant rows are translated
         df_to_process = df
-        if selected_segments:
-            df_to_process = df_to_process[df_to_process[location_col].isin(selected_segments)]
-        for col, vals in addl_filters.items():
-            df_to_process = df_to_process[df_to_process[col].isin(vals)]
+        if process_filtered_only:
+            if selected_segments:
+                df_to_process = df_to_process[df_to_process[location_col].isin(selected_segments)]
+            for col, vals in addl_filters.items():
+                df_to_process = df_to_process[df_to_process[col].isin(vals)]
 
         if analysis_mode != "Structured Data Only":
             with st.spinner("Processing free-text responses..."):
