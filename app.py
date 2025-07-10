@@ -1030,12 +1030,22 @@ def save_pdf(
     return bio
 
 
-def process_free_text(df: pd.DataFrame, free_text_cols: List[str], cache_path: str) -> pd.DataFrame:
+def process_free_text(
+    df: pd.DataFrame,
+    free_text_cols: List[str],
+    cache_path: str,
+    batch_size: int = 5,
+) -> pd.DataFrame:
     """Concatenate, translate and categorize free-text columns with progress.
 
     The function saves intermediate results to ``cache_path`` with a ``_partial``
     suffix after each processed batch so that work can be resumed if the app is
     restarted.
+
+    Parameters
+    ----------
+    batch_size : int, optional
+        Number of rows to process concurrently in each batch.
     """
 
     df["Concatenated"] = concat_series(df, free_text_cols)
@@ -1062,7 +1072,6 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str], cache_path: s
 
     progress = st.progress(0.0, text="Starting...")
     start_time = time.time()
-    batch_size = 5
     partial_path = cache_path.replace(".pkl", "_partial.pkl")
 
     for batch_start in range(0, len(to_process), batch_size):
@@ -1351,6 +1360,14 @@ if file and validate_file(file):
         help="Choose which analysis steps to run",
     )
 
+    batch_size = st.sidebar.slider(
+        "Batch size",
+        min_value=1,
+        max_value=20,
+        value=5,
+        help="Number of comments to process at once",
+    )
+
     if st.session_state.get("pdf_pivots"):
         pdf_buf_charts = save_pdf(
             "NPS Survey Charts", st.session_state["pdf_pivots"],
@@ -1401,7 +1418,12 @@ if file and validate_file(file):
 
         if analysis_mode != "Structured Data Only":
             with st.spinner("Processing free-text responses..."):
-                processed_subset = process_free_text(df_to_process, free_text_cols, cache_path)
+                processed_subset = process_free_text(
+                    df_to_process,
+                    free_text_cols,
+                    cache_path,
+                    batch_size=batch_size,
+                )
 
             # Ensure new columns exist in the main DataFrame so update() doesn't
             # drop the AI-generated results such as Categories or reasoning.
