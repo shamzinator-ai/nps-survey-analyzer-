@@ -916,6 +916,19 @@ def export_full_excel(df: pd.DataFrame, filename: str, label: str, help: str | N
     )
 
 
+def pivots_to_csv(pivots: dict[str, tuple[pd.DataFrame, BytesIO]]) -> bytes:
+    """Return a single CSV containing all pivot tables."""
+    frames: list[pd.DataFrame] = []
+    for question, (pivot_df, _) in pivots.items():
+        df = pivot_df.copy()
+        df.insert(0, "Question", question)
+        frames.append(df)
+    if not frames:
+        return b""
+    combined = pd.concat(frames, ignore_index=True)
+    return combined.to_csv(index=False).encode("utf-8")
+
+
 def read_uploaded_file(uploaded_file) -> pd.DataFrame | None:
     """Load an uploaded CSV or Excel file with encoding validation."""
     raw_bytes = uploaded_file.getvalue()
@@ -1937,6 +1950,14 @@ if file and validate_file(file):
             if pdf_pivots:
                 pdf_buf_all = save_pdf("NPS Survey Charts and Tables", pdf_pivots)
                 st.session_state["pdf_pivots"] = pdf_pivots
+                csv_all = pivots_to_csv(pdf_pivots)
+                st.download_button(
+                    "DOWNLOAD 1 CSV CONTAINING ALL STRUCTURED DATA PIVOT TABLES",
+                    csv_all,
+                    "all_structured_pivots.csv",
+                    mime="text/csv",
+                    key=unique_key("all_pivots_csv"),
+                )
                 st.download_button(
                     "Download Everything PDF",
                     pdf_buf_all,

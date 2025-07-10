@@ -15,6 +15,7 @@ The question **"1: How likely are you to recommend Twinkl to a friend or colleag
 - Displays the number of rows after filters are applied.
 - These KPIs and charts are shown before the detailed report for quick insight.
 - Downloadable results and pivot tables.
+- Use the **DOWNLOAD 1 CSV CONTAINING ALL STRUCTURED DATA PIVOT TABLES** button to save every pivot table in a single CSV.
 - Use the **Download Charts PDF** button to save all graphs with their question titles.
 - Use the **Download Tables PDF** button to save each pivot table with its question text.
 - A second **Download Charts PDF** button appears after processing so you can download the graphs at the end as well.
