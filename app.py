@@ -489,9 +489,24 @@ async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], str,
     return await asyncio.gather(*tasks)
 
 
-def generate_pivot(df: pd.DataFrame, column: str) -> pd.DataFrame:
-    """Return value counts with percentage and total row."""
-    pivot = df[column].value_counts(dropna=False).reset_index()
+def generate_pivot(
+    df: pd.DataFrame, column: str, *, exclude_na: bool = False
+) -> pd.DataFrame:
+    """Return value counts with percentage and total row.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing the survey data.
+    column : str
+        Column to summarize.
+    exclude_na : bool, optional
+        When True, ignore missing values so ``NaN`` does not appear in charts.
+    """
+    series = df[column]
+    if exclude_na:
+        series = series.dropna()
+    pivot = series.value_counts(dropna=False).reset_index()
     pivot.columns = ["Response", "Count"]
     total = pivot["Count"].sum()
     pivot["Percent"] = (pivot["Count"] / total * 100).round(1)
@@ -1766,7 +1781,8 @@ if file and validate_file(file):
             for col in structured_cols:
                 if col in processed:
                     continue
-                pivot = generate_pivot(analysis_df, col)
+                drop_na = "what percentage of your membership" in str(col).lower()
+                pivot = generate_pivot(analysis_df, col, exclude_na=drop_na)
                 question_text = str(col)
                 st.write(f"### {question_text}")
                 st.dataframe(pivot)
@@ -1915,7 +1931,14 @@ if file and validate_file(file):
                                 f"**Total tokens used:** {seg_tokens} (estimated cost ${seg_cost_disp:.2f})"
                             )
                         st.markdown(report_text)
-                        pivot_dict = {col: generate_pivot(seg_df, col) for col in structured_cols}
+                        pivot_dict = {
+                            col: generate_pivot(
+                                seg_df,
+                                col,
+                                exclude_na="what percentage of your membership" in str(col).lower(),
+                            )
+                            for col in structured_cols
+                        }
                         pivot_dict["Category Frequency"] = cat_pivot
                         if not nps_pivot.empty:
                             pivot_dict["NPS Distribution"] = nps_pivot
