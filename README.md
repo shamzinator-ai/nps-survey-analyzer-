@@ -19,6 +19,7 @@ The question **"1: How likely are you to recommend Twinkl to a friend or colleag
 - Use the **Download Tables PDF** button to save each pivot table with its question text.
 - A second **Download Charts PDF** button appears after processing so you can download the graphs at the end as well.
 - Use the **Download Everything PDF** button to save all charts, tables and the report in one file.
+- Use the **Download all graphs/tables on a PDF** button to download every graph and pivot table with the related question text.
 - Generate a narrative report and download it as a DOCX or via **Download Everything PDF**.
 - Filter data by multiple segment columns at once (e.g., Country and Career Type).
 - Quickly apply predefined segment filters such as **UK Parents** or **US Teachers**.
