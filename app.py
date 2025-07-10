@@ -50,6 +50,10 @@ MODEL = "gpt-4o-mini"
 # Approximate model cost per 1K tokens in USD used for cost estimates
 TOKEN_COST_PER_1K = 0.01
 
+# Retry configuration for API calls
+MAX_RETRIES = 3
+REQUEST_TIMEOUT = 20  # seconds
+
 
 # Provide user-friendly messages for common OpenAI errors
 def format_openai_error(e: Exception) -> str:
@@ -387,31 +391,40 @@ async def async_translate_batch(texts: List[str]) -> List[Tuple[str, str, int, s
             "Detect the language of the following text and translate it to English."
             "Respond in JSON with keys 'language' and 'translation'.\nText: " + text
         )
-        try:
-            response = await openai_async.chat.completions.create(
-                model=MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0,
-                response_format={"type": "json_object"},
-            )
-            content = response.choices[0].message.content
-            data = json.loads(content)
-            tokens = response.usage.total_tokens if getattr(response, "usage", None) else 0
-            finish = response.choices[0].finish_reason or ""
-            return (
-                data.get("translation", "").strip(),
-                data.get("language", ""),
-                tokens,
-                finish,
-            )
-        except json.JSONDecodeError as e:
-            st.error(f"Failed to parse JSON response: {e}")
-            return text, "", 0, ""
-        except Exception as e:
-            if DEBUG:
-                st.exception(e)
-            st.error(f"Translation failed: {format_openai_error(e)}")
-            return text, "", 0, ""
+        delay = 1
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = await asyncio.wait_for(
+                    openai_async.chat.completions.create(
+                        model=MODEL,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0,
+                        response_format={"type": "json_object"},
+                    ),
+                    timeout=REQUEST_TIMEOUT,
+                )
+                content = response.choices[0].message.content
+                data = json.loads(content)
+                tokens = response.usage.total_tokens if getattr(response, "usage", None) else 0
+                finish = response.choices[0].finish_reason or ""
+                return (
+                    data.get("translation", "").strip(),
+                    data.get("language", ""),
+                    tokens,
+                    finish,
+                )
+            except (json.JSONDecodeError, Exception) as e:
+                if attempt < MAX_RETRIES - 1:
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                    continue
+                if isinstance(e, json.JSONDecodeError):
+                    st.error(f"Failed to parse JSON response: {e}")
+                else:
+                    if DEBUG:
+                        st.exception(e)
+                    st.warning(f"Translation failed after retries: {format_openai_error(e)}")
+                return text, "", 0, "error"
 
     tasks = [asyncio.create_task(_translate(t)) for t in texts]
     return await asyncio.gather(*tasks)
@@ -434,34 +447,43 @@ async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], str,
         if not text:
             return [], "", 0, ""
         user_prompt = f"Categories: {categories_str}\nComment: {text}"
-        try:
-            response = await openai_async.chat.completions.create(
-                model=MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0,
-                response_format={"type": "json_object"},
-            )
-            content = response.choices[0].message.content.strip()
-            data = json.loads(content)
-            categories_raw = data.get("categories", "")
-            reasoning = data.get("reasoning", "").strip()
-            tokens = response.usage.total_tokens if getattr(response, "usage", None) else 0
-            finish = response.choices[0].finish_reason or ""
-            if categories_raw.lower() == "none":
-                return [], reasoning, tokens, finish
-            categories = [c.strip() for c in categories_raw.split(",")]
-            return categories, reasoning, tokens, finish
-        except json.JSONDecodeError as e:
-            st.error(f"Failed to parse JSON response: {e}")
-            return [], "", 0, ""
-        except Exception as e:
-            if DEBUG:
-                st.exception(e)
-            st.error(f"Categorization failed: {format_openai_error(e)}")
-            return [], "", 0, ""
+        delay = 1
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = await asyncio.wait_for(
+                    openai_async.chat.completions.create(
+                        model=MODEL,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        temperature=0,
+                        response_format={"type": "json_object"},
+                    ),
+                    timeout=REQUEST_TIMEOUT,
+                )
+                content = response.choices[0].message.content.strip()
+                data = json.loads(content)
+                categories_raw = data.get("categories", "")
+                reasoning = data.get("reasoning", "").strip()
+                tokens = response.usage.total_tokens if getattr(response, "usage", None) else 0
+                finish = response.choices[0].finish_reason or ""
+                if categories_raw.lower() == "none":
+                    return [], reasoning, tokens, finish
+                categories = [c.strip() for c in categories_raw.split(",")]
+                return categories, reasoning, tokens, finish
+            except (json.JSONDecodeError, Exception) as e:
+                if attempt < MAX_RETRIES - 1:
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                    continue
+                if isinstance(e, json.JSONDecodeError):
+                    st.error(f"Failed to parse JSON response: {e}")
+                else:
+                    if DEBUG:
+                        st.exception(e)
+                    st.warning(f"Categorization failed after retries: {format_openai_error(e)}")
+                return [], "", 0, "error"
 
     tasks = [asyncio.create_task(_categorize(t)) for t in texts]
     return await asyncio.gather(*tasks)
