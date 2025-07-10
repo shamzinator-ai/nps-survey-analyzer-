@@ -1404,14 +1404,16 @@ if file and validate_file(file):
 
             # Merge processed rows back into the main dataframe so previously
             # unprocessed English comments are retained for later analysis.
-            df.update(processed_subset)
+            for col in processed_subset.columns:
+                df.loc[processed_subset.index, col] = processed_subset[col]
 
             st.success("Processing complete")
 
             if show_comments:
                 processed_subset = review_translations(processed_subset, user_id_col)
             # Persist edits back into the full DataFrame and cache
-            df.update(processed_subset)
+            for col in processed_subset.columns:
+                df.loc[processed_subset.index, col] = processed_subset[col]
             st.session_state["processed_df"] = df
             df.to_pickle(cache_path)
             if os.path.exists(partial_path):
