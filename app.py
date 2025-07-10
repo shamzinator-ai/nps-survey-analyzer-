@@ -1628,10 +1628,10 @@ if file and validate_file(file):
             if pdf_pivots:
                 pdf_buf = save_pdf("NPS Survey Charts and Tables", pdf_pivots)
                 st.download_button(
-                    "Download Charts PDF",
+                    "Download Everything PDF",
                     pdf_buf,
                     "all_charts_tables.pdf",
-                    help="Download all pivot tables and charts as a single PDF.",
+                    help="Download all analysis results as a single PDF.",
                     key=unique_key("all_pivots_pdf"),
                 )
 
@@ -1705,10 +1705,10 @@ if file and validate_file(file):
                                 key=unique_key(f"{segment_title}_docx"),
                             )
                             st.download_button(
-                                "Download PDF",
+                                "Download Everything PDF",
                                 pdf_file,
                                 f"{segment_title}_report.pdf",
-                                help="Save the report as a PDF file.",
+                                help="Download the full report with tables and charts as a PDF.",
                                 key=unique_key(f"{segment_title}_pdf"),
                             )
                         else:
