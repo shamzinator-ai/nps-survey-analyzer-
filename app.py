@@ -971,9 +971,24 @@ def save_docx(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
 
 
 def save_pdf(
-    text: str, pivots: dict[str, pd.DataFrame], include_charts: bool = True
+    text: str,
+    pivots: dict[str, pd.DataFrame],
+    include_charts: bool = True,
+    include_tables: bool = True,
 ) -> BytesIO:
-    """Save text and pivot tables as a PDF, optionally including charts."""
+    """Save text, charts and tables as a PDF.
+
+    Parameters
+    ----------
+    text : str
+        Introductory text to display at the top of the PDF.
+    pivots : dict[str, pd.DataFrame]
+        Mapping of question titles to pivot DataFrames.
+    include_charts : bool, optional
+        Include chart images under each question, by default ``True``.
+    include_tables : bool, optional
+        Include pivot tables under each question, by default ``True``.
+    """
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(True, margin=15)
@@ -985,18 +1000,19 @@ def save_pdf(
         pdf.ln(5)
         pdf.set_font("Arial", "B", 12)
         pdf.cell(0, 10, title, ln=True)
-        pdf.set_font("Arial", size=10)
-        col_widths = [80, 30, 30]
-        headers = list(pivot.columns)
-        for i, h in enumerate(headers):
-            w = col_widths[i] if i < len(col_widths) else 30
-            pdf.cell(w, 8, str(h), border=1)
-        pdf.ln()
-        for _, row in pivot.iterrows():
+        if include_tables:
+            pdf.set_font("Arial", size=10)
+            col_widths = [80, 30, 30]
+            headers = list(pivot.columns)
             for i, h in enumerate(headers):
                 w = col_widths[i] if i < len(col_widths) else 30
-                pdf.cell(w, 8, str(row[h]), border=1)
+                pdf.cell(w, 8, str(h), border=1)
             pdf.ln()
+            for _, row in pivot.iterrows():
+                for i, h in enumerate(headers):
+                    w = col_widths[i] if i < len(col_widths) else 30
+                    pdf.cell(w, 8, str(row[h]), border=1)
+                pdf.ln()
         if include_charts:
             img = chart_png(pivot, f"{title} Responses")
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
@@ -1339,7 +1355,8 @@ if file and validate_file(file):
 
     if st.session_state.get("pdf_pivots"):
         pdf_buf_charts = save_pdf(
-            "NPS Survey Charts and Tables", st.session_state["pdf_pivots"]
+            "NPS Survey Charts", st.session_state["pdf_pivots"],
+            include_charts=True, include_tables=False
         )
         st.download_button(
             "Download Charts PDF",
@@ -1693,14 +1710,27 @@ if file and validate_file(file):
                     key=unique_key("all_pivots_zip"),
                 )
             if pdf_pivots:
-                pdf_buf = save_pdf("NPS Survey Charts and Tables", pdf_pivots)
+                pdf_buf_all = save_pdf("NPS Survey Charts and Tables", pdf_pivots)
                 st.session_state["pdf_pivots"] = pdf_pivots
                 st.download_button(
                     "Download Everything PDF",
-                    pdf_buf,
+                    pdf_buf_all,
                     "all_charts_tables.pdf",
                     help="Download all analysis results as a single PDF.",
                     key=unique_key("all_pivots_pdf"),
+                )
+                pdf_buf_charts = save_pdf(
+                    "NPS Survey Charts",
+                    pdf_pivots,
+                    include_charts=True,
+                    include_tables=False,
+                )
+                st.download_button(
+                    "Download Charts PDF",
+                    pdf_buf_charts,
+                    "all_charts.pdf",
+                    help="Download every chart with its question text.",
+                    key=unique_key("all_charts_pdf"),
                 )
                 pdf_tables = save_pdf(
                     "NPS Survey Tables", pdf_pivots, include_charts=False
@@ -1774,6 +1804,9 @@ if file and validate_file(file):
                             pivot_dict["NPS Distribution"] = nps_pivot
                         docx_file = save_docx(report_text, pivot_dict)
                         pdf_file = save_pdf(report_text, pivot_dict)
+                        pdf_charts = save_pdf(
+                            report_text, pivot_dict, include_charts=True, include_tables=False
+                        )
                         pdf_tables = save_pdf(
                             report_text, pivot_dict, include_charts=False
                         )
@@ -1793,6 +1826,13 @@ if file and validate_file(file):
                                 key=unique_key(f"{segment_title}_pdf"),
                             )
                             st.download_button(
+                                "Download Charts PDF",
+                                pdf_charts,
+                                f"{segment_title}_charts.pdf",
+                                help="PDF containing each chart with question text only.",
+                                key=unique_key(f"{segment_title}_charts_pdf"),
+                            )
+                            st.download_button(
                                 "Download Tables PDF",
                                 pdf_tables,
                                 f"{segment_title}_tables.pdf",
@@ -1802,6 +1842,7 @@ if file and validate_file(file):
                         else:
                             zipf.writestr(f"{segment_title}_report.docx", docx_file.getvalue())
                             zipf.writestr(f"{segment_title}_report.pdf", pdf_file.getvalue())
+                            zipf.writestr(f"{segment_title}_charts.pdf", pdf_charts.getvalue())
                             zipf.writestr(
                                 f"{segment_title}_tables.pdf", pdf_tables.getvalue()
                             )
