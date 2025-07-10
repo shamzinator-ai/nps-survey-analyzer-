@@ -505,9 +505,7 @@ async def async_categorize_batch(texts: List[str]) -> List[Tuple[List[str], str,
     return await asyncio.gather(*tasks)
 
 
-def generate_pivot(
-    df: pd.DataFrame, column: str, *, exclude_na: bool = False
-) -> pd.DataFrame:
+def generate_pivot(df: pd.DataFrame, column: str, *, exclude_na: bool = False) -> pd.DataFrame:
     """Return value counts with percentage and total row.
 
     Parameters
@@ -526,6 +524,13 @@ def generate_pivot(
     pivot.columns = ["Response", "Count"]
     total = pivot["Count"].sum()
     pivot["Percent"] = (pivot["Count"] / total * 100).round(1)
+
+    # If responses are numeric like 1-5, sort in ascending numeric order
+    vals = pivot["Response"].astype(str).str.replace(r"\.0$", "", regex=True)
+    if vals.str.fullmatch(r"\d+").all():
+        pivot["Response"] = vals.astype(int).astype(str)
+        pivot = pivot.sort_values("Response", key=lambda s: s.astype(int))
+
     total_row = pd.DataFrame({"Response": ["Total"], "Count": [total], "Percent": [100.0]})
     pivot = pd.concat([pivot, total_row], ignore_index=True)
     return pivot
@@ -627,7 +632,7 @@ def stacked_bar_chart(pivot: pd.DataFrame, title: str, order: List[str] | None =
             ),
             tooltip=["Rating", "Count"],
         )
-        .properties(title=f"{title} \U0001F4CA", height=300)
+        .properties(title=f"{title} \U0001f4ca", height=300)
         .configure_title(fontSize=22)
         .configure_axis(labelFontSize=16, titleFontSize=18)
     )
@@ -683,12 +688,18 @@ def create_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None
         scale=alt.Scale(range=color_range),
         legend=None,
     )
+    x_sort: List[str] | str = "-y"
     if order:
         enc_color = alt.Color(
             "Response:N",
             sort=order,
             scale=alt.Scale(domain=order, range=rating_colors(order)),
         )
+        x_sort = order
+    else:
+        vals = pivot["Response"]
+        if vals.str.fullmatch(r"\d+(?:\.0)?").all():
+            x_sort = sorted(vals.unique(), key=lambda x: int(float(x)))
 
     chart = (
         alt.Chart(pivot, background="white")
@@ -696,7 +707,7 @@ def create_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None
         .encode(
             x=alt.X(
                 "Response_display:N",
-                sort="-y",
+                sort=x_sort,
                 title="Response",
                 axis=alt.Axis(labelAngle=0, labelLimit=0),
             ),
@@ -726,12 +737,18 @@ def bar_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None) -
     st.altair_chart(chart, use_container_width=True)
 
     if "Response" in pivot.columns:
-        labels_order = (
-            pivot[pivot["Response"] != "Total"]
-            .sort_values("Count", ascending=False)["Response"]
-            .astype(str)
-            .tolist()
-        )
+        data_vals = pivot[pivot["Response"] != "Total"]["Response"].astype(str)
+        if order:
+            labels_order = [v for v in order if v in data_vals.values]
+        elif data_vals.str.fullmatch(r"\d+(?:\.0)?").all():
+            labels_order = sorted(data_vals.unique(), key=lambda x: int(float(x)))
+        else:
+            labels_order = (
+                pivot[pivot["Response"] != "Total"]
+                .sort_values("Count", ascending=False)["Response"]
+                .astype(str)
+                .tolist()
+            )
         st.caption("Data label order: " + ", ".join(labels_order))
 
     png_buffer = BytesIO()
@@ -976,11 +993,7 @@ def review_translations(df: pd.DataFrame, id_col: str) -> pd.DataFrame:
             new_orig_cats = st.multiselect(
                 "Original Categories",
                 options=CATEGORIES,
-                default=[
-                    c.strip()
-                    for c in row.get("OriginalCategories", "").split(",")
-                    if c
-                ],
+                default=[c.strip() for c in row.get("OriginalCategories", "").split(",") if c],
                 key=f"orig_cat_{idx}",
                 help="Edit categories for the original text.",
             )
@@ -1217,9 +1230,7 @@ def process_free_text(
             df.at[idx, "OriginalCategories"] = ", ".join(batch_orig_cats[offset])
             df.at[idx, "OriginalCategoryReasoning"] = batch_orig_reason[offset]
             total_tokens = (
-                batch_toks_trans[offset]
-                + batch_toks_cat[offset]
-                + batch_toks_orig[offset]
+                batch_toks_trans[offset] + batch_toks_cat[offset] + batch_toks_orig[offset]
             )
             df.at[idx, "ModelTokens"] = total_tokens
             fin_orig = batch_finish_orig[offset]
@@ -1228,9 +1239,7 @@ def process_free_text(
             if fin_orig == fin_trans == fin_cat:
                 df.at[idx, "FinishReason"] = fin_trans
             else:
-                df.at[idx, "FinishReason"] = (
-                    f"O:{fin_orig}; T:{fin_trans}; C:{fin_cat}"
-                )
+                df.at[idx, "FinishReason"] = f"O:{fin_orig}; T:{fin_trans}; C:{fin_cat}"
 
         processed = batch_start + len(batch_indices)
         rate = (time.time() - start_time) / (processed if processed else 1)
@@ -1499,8 +1508,10 @@ if file and validate_file(file):
 
     if st.session_state.get("pdf_pivots"):
         pdf_buf_charts = save_pdf(
-            "NPS Survey Charts", st.session_state["pdf_pivots"],
-            include_charts=True, include_tables=False
+            "NPS Survey Charts",
+            st.session_state["pdf_pivots"],
+            include_charts=True,
+            include_tables=False,
         )
         st.download_button(
             "Download Charts PDF",
@@ -1719,9 +1730,7 @@ if file and validate_file(file):
                 processed.update(content_rating_cols)
 
             satisfaction_cols = [
-                c
-                for c in structured_cols
-                if re.match(r"^12(\.\d+)?[\.:]", str(c))
+                c for c in structured_cols if re.match(r"^12(\.\d+)?[\.:]", str(c))
             ]
             if satisfaction_cols:
                 pivot = combined_rating_pivot(
@@ -1756,11 +1765,7 @@ if file and validate_file(file):
 
             processed.update(satisfaction_cols)
 
-            service_compare_cols = [
-                c
-                for c in structured_cols
-                if re.match(r"^16[\.:]", str(c))
-            ]
+            service_compare_cols = [c for c in structured_cols if re.match(r"^16[\.:]", str(c))]
             if service_compare_cols:
                 pivot = combined_rating_pivot(
                     analysis_df,
@@ -1940,9 +1945,7 @@ if file and validate_file(file):
                     help="Download every chart with its question text.",
                     key=unique_key("all_charts_pdf"),
                 )
-                pdf_tables = save_pdf(
-                    "NPS Survey Tables", pdf_pivots, include_charts=False
-                )
+                pdf_tables = save_pdf("NPS Survey Tables", pdf_pivots, include_charts=False)
                 st.download_button(
                     "Download Tables PDF",
                     pdf_tables,
@@ -2036,13 +2039,14 @@ if file and validate_file(file):
                         token_prefix = ""
                         if seg_tokens is not None:
                             seg_cost_calc = seg_cost if seg_cost is not None else 0
-                            token_prefix = (
-                                f"Total tokens used: {seg_tokens} (estimated cost ${seg_cost_calc:.2f})\n\n"
-                            )
+                            token_prefix = f"Total tokens used: {seg_tokens} (estimated cost ${seg_cost_calc:.2f})\n\n"
                         docx_file = save_docx(token_prefix + report_text, pivot_dict)
                         pdf_file = save_pdf(token_prefix + report_text, pivot_dict)
                         pdf_charts = save_pdf(
-                            token_prefix + report_text, pivot_dict, include_charts=True, include_tables=False
+                            token_prefix + report_text,
+                            pivot_dict,
+                            include_charts=True,
+                            include_tables=False,
                         )
                         pdf_tables = save_pdf(
                             token_prefix + report_text, pivot_dict, include_charts=False
@@ -2080,9 +2084,7 @@ if file and validate_file(file):
                             zipf.writestr(f"{segment_title}_report.docx", docx_file.getvalue())
                             zipf.writestr(f"{segment_title}_report.pdf", pdf_file.getvalue())
                             zipf.writestr(f"{segment_title}_charts.pdf", pdf_charts.getvalue())
-                            zipf.writestr(
-                                f"{segment_title}_tables.pdf", pdf_tables.getvalue()
-                            )
+                            zipf.writestr(f"{segment_title}_tables.pdf", pdf_tables.getvalue())
                 if len(selected_segments) > 1:
                     zip_buffer.seek(0)
                     st.download_button(
