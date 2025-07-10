@@ -237,6 +237,7 @@ SATISFACTION_ORDER = [
     "Dissatisfied",
     "Slightly Dissatisfied",
     "Neutral",
+    "Indifferent",
     "Slightly Satisfied",
     "Satisfied",
     "Very Satisfied",
@@ -263,7 +264,14 @@ POSITIVE_COLORS = ["#99cfff", "#66b2ff", "#3399ff"]
 def rating_colors(order: List[str]) -> List[str]:
     """Return a color palette matching the given rating order."""
     if order in (RATING_ORDER_EASE, CONTENT_RATING_ORDER, SATISFACTION_ORDER):
-        return NEGATIVE_COLORS + [NEUTRAL_COLOR] + POSITIVE_COLORS
+        n_negative = 3
+        n_positive = 3
+        n_neutral = max(len(order) - n_negative - n_positive, 1)
+        return (
+            NEGATIVE_COLORS[:n_negative]
+            + [NEUTRAL_COLOR] * n_neutral
+            + POSITIVE_COLORS[:n_positive]
+        )
     if order in (IMPORTANCE_ORDER, IMPORTANCE_ORDER_NUMERIC):
         return NEGATIVE_COLORS[1:] + [NEUTRAL_COLOR] + POSITIVE_COLORS[1:]
     # Fallback gradient
@@ -1497,7 +1505,11 @@ if file and validate_file(file):
                 pdf_pivots[question_text] = pivot
                 processed.update(content_rating_cols)
 
-            satisfaction_cols = [c for c in structured_cols if str(c).startswith("12.")]
+            satisfaction_cols = [
+                c
+                for c in structured_cols
+                if re.match(r"^12(\.\d+)?[\.:]", str(c))
+            ]
             if satisfaction_cols:
                 pivot = combined_rating_pivot(
                     analysis_df, satisfaction_cols, order=SATISFACTION_ORDER
