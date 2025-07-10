@@ -1388,6 +1388,20 @@ if file and validate_file(file):
             with st.spinner("Processing free-text responses..."):
                 processed_subset = process_free_text(df_to_process, free_text_cols, cache_path)
 
+            # Ensure new columns exist in the main DataFrame so update() doesn't
+            # drop the AI-generated results such as Categories or reasoning.
+            for col in [
+                "Concatenated",
+                "Translated",
+                "Language",
+                "Categories",
+                "CategoryReasoning",
+                "ModelTokens",
+                "FinishReason",
+            ]:
+                if col not in df.columns:
+                    df[col] = "" if col != "ModelTokens" else 0
+
             # Merge processed rows back into the main dataframe so previously
             # unprocessed English comments are retained for later analysis.
             df.update(processed_subset)
