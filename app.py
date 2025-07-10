@@ -148,6 +148,8 @@ EXCLUDED_STRUCTURED_COLUMNS = [
     "Concatenated",
     "Translated",
     "CategoryReasoning",
+    "OriginalCategories",
+    "OriginalCategoryReasoning",
     "FinishReason",
     "Flagged",
     "ModelTokens",
@@ -882,16 +884,26 @@ def review_translations(df: pd.DataFrame, id_col: str) -> pd.DataFrame:
             st.write("**Original:**", row["Concatenated"])
             st.write(f"Tokens used: {row.get('ModelTokens', 0)}")
             st.write(f"Finish reason: {row.get('FinishReason', '')}")
-            if show_reasoning and row.get("CategoryReasoning"):
-                st.write("**Reasoning:**", row["CategoryReasoning"])
+            if show_reasoning:
+                if row.get("OriginalCategoryReasoning"):
+                    st.write("**Original Reasoning:**", row["OriginalCategoryReasoning"])
+                if row.get("CategoryReasoning"):
+                    st.write("**Translated Reasoning:**", row["CategoryReasoning"])
             new_trans = st.text_area(
                 "Translated",
                 value=row["Translated"],
                 key=f"trans_{idx}",
                 help="Edit the AI translation if it looks incorrect.",
             )
+            new_orig_cats = st.multiselect(
+                "Original Categories",
+                options=CATEGORIES,
+                default=[c.strip() for c in row["OriginalCategories"].split(",") if c],
+                key=f"orig_cat_{idx}",
+                help="Add or remove categories for the original comment.",
+            )
             new_cats = st.multiselect(
-                "Categories",
+                "Translated Categories",
                 options=CATEGORIES,
                 default=[c.strip() for c in row["Categories"].split(",") if c],
                 key=f"cat_{idx}",
@@ -901,6 +913,7 @@ def review_translations(df: pd.DataFrame, id_col: str) -> pd.DataFrame:
                 "Flag for review", key=f"flag_{idx}", help="Mark this comment for manual follow-up."
             )
             df.at[idx, "Translated"] = new_trans
+            df.at[idx, "OriginalCategories"] = ", ".join(new_orig_cats)
             df.at[idx, "Categories"] = ", ".join(new_cats)
             flags.append(flag)
     df["Flagged"] = flags
@@ -1046,6 +1059,8 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str], cache_path: s
         ("Language", ""),
         ("Categories", ""),
         ("CategoryReasoning", ""),
+        ("OriginalCategories", ""),
+        ("OriginalCategoryReasoning", ""),
         ("ModelTokens", 0),
         ("FinishReason", ""),
     ]:
@@ -1069,6 +1084,12 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str], cache_path: s
         batch_indices = to_process[batch_start : batch_start + batch_size]
         batch_texts = [df.at[idx, "Concatenated"] for idx in batch_indices]
 
+        orig_cats_data = asyncio.run(async_categorize_batch(batch_texts))
+        orig_cats = [cats for cats, _, _, _ in orig_cats_data]
+        orig_reason = [reason for _, reason, _, _ in orig_cats_data]
+        orig_toks = [tok for _, _, tok, _ in orig_cats_data]
+        orig_finish = [fin for _, _, _, fin in orig_cats_data]
+
         trans_lang = asyncio.run(async_translate_batch(batch_texts))
         batch_trans = [t for t, _, _, _ in trans_lang]
         batch_langs = [lang for _, lang, _, _ in trans_lang]
@@ -1082,17 +1103,31 @@ def process_free_text(df: pd.DataFrame, free_text_cols: List[str], cache_path: s
         batch_finish_cat = [fin for _, _, _, fin in batch_cats_data]
 
         for offset, idx in enumerate(batch_indices):
+            df.at[idx, "OriginalCategories"] = ", ".join(orig_cats[offset])
+            df.at[idx, "OriginalCategoryReasoning"] = orig_reason[offset]
             df.at[idx, "Translated"] = batch_trans[offset]
             df.at[idx, "Language"] = batch_langs[offset]
             df.at[idx, "Categories"] = ", ".join(batch_cats[offset])
             df.at[idx, "CategoryReasoning"] = batch_reason[offset]
-            df.at[idx, "ModelTokens"] = batch_toks_trans[offset] + batch_toks_cat[offset]
+            df.at[idx, "ModelTokens"] = (
+                batch_toks_trans[offset]
+                + batch_toks_cat[offset]
+                + orig_toks[offset]
+            )
+            fin_orig = orig_finish[offset]
             fin_trans = batch_finish_trans[offset]
             fin_cat = batch_finish_cat[offset]
-            if fin_trans == fin_cat:
-                df.at[idx, "FinishReason"] = fin_trans
+            if fin_orig == fin_trans == fin_cat:
+                df.at[idx, "FinishReason"] = fin_orig
             else:
-                df.at[idx, "FinishReason"] = f"T:{fin_trans}; C:{fin_cat}"
+                parts = []
+                if fin_orig:
+                    parts.append(f"O:{fin_orig}")
+                if fin_trans:
+                    parts.append(f"T:{fin_trans}")
+                if fin_cat:
+                    parts.append(f"C:{fin_cat}")
+                df.at[idx, "FinishReason"] = "; ".join(parts)
 
         processed = batch_start + len(batch_indices)
         rate = (time.time() - start_time) / (processed if processed else 1)
