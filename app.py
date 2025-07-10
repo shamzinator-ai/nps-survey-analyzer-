@@ -736,15 +736,16 @@ def bar_chart(pivot: pd.DataFrame, title: str, order: List[str] | None = None) -
     chart = create_chart(pivot, title, order=order)
     st.altair_chart(chart, use_container_width=True)
 
-    if "Response" in pivot.columns:
-        data_vals = pivot[pivot["Response"] != "Total"]["Response"].astype(str)
+    label_pivot = pivot.rename(columns={"Category": "Response"})
+    if "Response" in label_pivot.columns:
+        data_vals = label_pivot[label_pivot["Response"] != "Total"]["Response"].astype(str)
         if order:
             labels_order = [v for v in order if v in data_vals.values]
         elif data_vals.str.fullmatch(r"\d+(?:\.0)?").all():
             labels_order = sorted(data_vals.unique(), key=lambda x: int(float(x)))
         else:
             labels_order = (
-                pivot[pivot["Response"] != "Total"]
+                label_pivot[label_pivot["Response"] != "Total"]
                 .sort_values("Count", ascending=False)["Response"]
                 .astype(str)
                 .tolist()
