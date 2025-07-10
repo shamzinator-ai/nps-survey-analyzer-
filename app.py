@@ -47,6 +47,8 @@ if not openai.api_key:
     else:
         st.stop()
 MODEL = "gpt-4o-mini"
+# Approximate model cost per 1K tokens in USD used for cost estimates
+TOKEN_COST_PER_1K = 0.01
 
 
 # Provide user-friendly messages for common OpenAI errors
@@ -766,6 +768,14 @@ def display_summary(df: pd.DataFrame, nps_col: str | None):
     """Show high-level KPIs and charts."""
     st.subheader("🚀 High-Level KPIs")
     st.metric("Rows After Filters", len(df))
+    total_tokens = st.session_state.get("total_tokens")
+    if total_tokens is None and "ModelTokens" in df.columns:
+        total_tokens = int(df["ModelTokens"].sum())
+    if total_tokens is not None:
+        st.metric("Total Model Tokens", total_tokens)
+        if TOKEN_COST_PER_1K:
+            est_cost = total_tokens / 1000 * TOKEN_COST_PER_1K
+            st.metric("Estimated Cost", f"${est_cost:.2f}")
     nps_pivot, cat_pivot, (pos, neg), nps_score = compute_kpis(df, nps_col)
     if nps_score is not None:
         st.metric("NPS Score", nps_score)
@@ -1485,6 +1495,9 @@ if file and validate_file(file):
 
             st.success("Processing complete")
 
+            if "ModelTokens" in df.columns:
+                st.session_state["total_tokens"] = int(df["ModelTokens"].sum())
+
             if show_comments:
                 processed_subset = review_translations(processed_subset, user_id_col)
             # Persist edits back into the full DataFrame and cache
@@ -1496,6 +1509,8 @@ if file and validate_file(file):
                 os.remove(partial_path)
         else:
             st.session_state["processed_df"] = df
+            if "ModelTokens" in df.columns:
+                st.session_state["total_tokens"] = int(df["ModelTokens"].sum())
 
     processed_df = st.session_state.get("processed_df")
     if processed_df is not None:
@@ -1839,6 +1854,14 @@ if file and validate_file(file):
 
                         st.markdown(f"## KPIs for {segment_title}")
                         st.metric("Rows in Segment", len(seg_df))
+                        seg_tokens = None
+                        seg_cost = None
+                        if "ModelTokens" in seg_df.columns:
+                            seg_tokens = int(seg_df["ModelTokens"].sum())
+                            st.metric("Total Model Tokens", seg_tokens)
+                            if TOKEN_COST_PER_1K:
+                                seg_cost = seg_tokens / 1000 * TOKEN_COST_PER_1K
+                                st.metric("Estimated Cost", f"${seg_cost:.2f}")
                         nps_pivot, cat_pivot, (pos, neg), nps_score = compute_kpis(seg_df, nps_col)
                         if nps_score is not None:
                             st.metric("NPS Score", nps_score)
@@ -1857,18 +1880,29 @@ if file and validate_file(file):
                         if not report_text:
                             continue
                         st.markdown(f"## Report for {segment_title}")
+                        if seg_tokens is not None:
+                            seg_cost_disp = seg_cost if seg_cost is not None else 0
+                            st.markdown(
+                                f"**Total tokens used:** {seg_tokens} (estimated cost ${seg_cost_disp:.2f})"
+                            )
                         st.markdown(report_text)
                         pivot_dict = {col: generate_pivot(seg_df, col) for col in structured_cols}
                         pivot_dict["Category Frequency"] = cat_pivot
                         if not nps_pivot.empty:
                             pivot_dict["NPS Distribution"] = nps_pivot
-                        docx_file = save_docx(report_text, pivot_dict)
-                        pdf_file = save_pdf(report_text, pivot_dict)
+                        token_prefix = ""
+                        if seg_tokens is not None:
+                            seg_cost_calc = seg_cost if seg_cost is not None else 0
+                            token_prefix = (
+                                f"Total tokens used: {seg_tokens} (estimated cost ${seg_cost_calc:.2f})\n\n"
+                            )
+                        docx_file = save_docx(token_prefix + report_text, pivot_dict)
+                        pdf_file = save_pdf(token_prefix + report_text, pivot_dict)
                         pdf_charts = save_pdf(
-                            report_text, pivot_dict, include_charts=True, include_tables=False
+                            token_prefix + report_text, pivot_dict, include_charts=True, include_tables=False
                         )
                         pdf_tables = save_pdf(
-                            report_text, pivot_dict, include_charts=False
+                            token_prefix + report_text, pivot_dict, include_charts=False
                         )
                         if len(selected_segments) <= 1:
                             st.download_button(
