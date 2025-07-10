@@ -1080,7 +1080,7 @@ def save_docx(text: str, pivots: dict[str, pd.DataFrame]) -> BytesIO:
 
 def save_pdf(
     text: str,
-    pivots: dict[str, pd.DataFrame],
+    pivots: dict[str, pd.DataFrame | tuple[pd.DataFrame, BytesIO]],
     include_charts: bool = True,
     include_tables: bool = True,
 ) -> BytesIO:
@@ -1090,8 +1090,9 @@ def save_pdf(
     ----------
     text : str
         Introductory text to display at the top of the PDF.
-    pivots : dict[str, pd.DataFrame]
-        Mapping of question titles to pivot DataFrames.
+    pivots : dict[str, pd.DataFrame | tuple[pd.DataFrame, BytesIO]]
+        Mapping of question titles to pivot DataFrames or ``(pivot, chart)``
+        tuples.
     include_charts : bool, optional
         Include chart images under each question, by default ``True``.
     include_tables : bool, optional
@@ -1104,7 +1105,11 @@ def save_pdf(
     for line in text.split("\n"):
         pdf.multi_cell(0, 10, line)
 
-    for title, pivot in pivots.items():
+    for title, value in pivots.items():
+        if isinstance(value, tuple):
+            pivot, chart_buf = value
+        else:
+            pivot, chart_buf = value, None
         pdf.ln(5)
         pdf.set_font("Arial", "B", 12)
         pdf.cell(0, 10, title, ln=True)
@@ -1122,7 +1127,12 @@ def save_pdf(
                     pdf.cell(w, 8, str(row[h]), border=1)
                 pdf.ln()
         if include_charts:
-            img = chart_png(pivot, f"{title} Responses")
+            if chart_buf is not None:
+                img = chart_buf
+            elif {"Aspect", "Rating"}.issubset(pivot.columns):
+                img = stacked_bar_chart(pivot, f"{title} Responses")
+            else:
+                img = chart_png(pivot, f"{title} Responses")
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 tmp.write(img.getvalue())
                 tmp.flush()
@@ -1649,7 +1659,7 @@ if file and validate_file(file):
         if analysis_mode != "Free Text Only":
             st.subheader("Structured Data Analysis")
             zip_entries: list[tuple[str, bytes]] = []
-            pdf_pivots: dict[str, pd.DataFrame] = {}
+            pdf_pivots: dict[str, tuple[pd.DataFrame, BytesIO]] = {}
 
             # Identify multi-select question groups by numeric prefix
             pattern = re.compile(r"^(\d+)[\.:]")
@@ -1705,7 +1715,7 @@ if file and validate_file(file):
                 safe = safe_name("question_ease")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-                pdf_pivots[question_text] = pivot
+                pdf_pivots[question_text] = (pivot, chart_buf)
                 processed.update(ease_cols)
 
             content_rating_cols = [c for c in structured_cols if str(c).startswith("8.")]
@@ -1734,7 +1744,7 @@ if file and validate_file(file):
                 safe = safe_name("question_8")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-                pdf_pivots[question_text] = pivot
+                pdf_pivots[question_text] = (pivot, chart_buf)
                 processed.update(content_rating_cols)
 
             satisfaction_cols = [
@@ -1769,7 +1779,7 @@ if file and validate_file(file):
                 safe = safe_name("question_12")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-                pdf_pivots[question_text] = pivot
+                pdf_pivots[question_text] = (pivot, chart_buf)
 
             processed.update(satisfaction_cols)
 
@@ -1809,7 +1819,7 @@ if file and validate_file(file):
                 safe = safe_name("question_16")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-                pdf_pivots[question_text] = pivot
+                pdf_pivots[question_text] = (pivot, chart_buf)
                 processed.update(service_compare_cols)
 
             importance_cols = [c for c in structured_cols if re.match(r"^21[\.:]", str(c))]
@@ -1850,7 +1860,7 @@ if file and validate_file(file):
                 safe = safe_name("question_21")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-                pdf_pivots[question_text] = pivot
+                pdf_pivots[question_text] = (pivot, chart_buf)
 
             for prefix, cols in groups.items():
                 question = MULTISELECT_QUESTION_TEXTS.get(prefix, f"Question {prefix}")
@@ -1877,7 +1887,7 @@ if file and validate_file(file):
                 safe = safe_name(f"question_{prefix}")
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-                pdf_pivots[question] = pivot
+                pdf_pivots[question] = (pivot, chart_buf)
                 processed.update(cols)
 
             for col in structured_cols:
@@ -1908,7 +1918,7 @@ if file and validate_file(file):
                 safe = safe_name(col)
                 zip_entries.append((f"{safe}/table.csv", csv_bytes))
                 zip_entries.append((f"{safe}/chart.png", chart_buf.getvalue()))
-                pdf_pivots[question_text] = pivot
+                pdf_pivots[question_text] = (pivot, chart_buf)
 
             if zip_entries:
                 zip_buf = BytesIO()
