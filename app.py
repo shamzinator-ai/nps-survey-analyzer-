@@ -786,8 +786,11 @@ def safe_name(name: str) -> str:
 
 
 def unique_key(name: str) -> str:
-    """Return a unique key for Streamlit widgets based on the provided name."""
-    return f"{safe_name(name)}_{uuid.uuid4().hex}"
+    """Return a stable unique key for Streamlit widgets."""
+    store = st.session_state.setdefault("unique_keys", {})
+    if name not in store:
+        store[name] = f"{safe_name(name)}_{uuid.uuid4().hex}"
+    return store[name]
 
 
 def latin1_safe(text: str) -> str:
