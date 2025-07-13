@@ -8,3 +8,8 @@ fpdf
 altair_saver
 vl-convert-python
 langdetect
+supabase
+pdf2image
+pillow
+tiktoken
+PyPDF2
