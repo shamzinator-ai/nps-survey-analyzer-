@@ -73,3 +73,14 @@ If the app fails to start or behaves unexpectedly, try the following:
 5. **Stale results** – click **Clear Cached Data** in the sidebar to remove saved progress.
 
 For more help open an issue on GitHub.
+
+## Knowledge Base and Agent Feedback
+
+The app now includes a very small demo of an agent-based feedback system. You can upload reference material for the **UX**, **Copywriting**, **Marketing**, or **Accessibility** agents in the sidebar. Supported formats are TXT, Markdown, DOCX and PDF. Each file is broken into short chunks, embedded with OpenAI and stored locally in `kb_store.json` for search.
+
+Uploaded documents are initially marked as *pending*. Visit the **Admin** page to approve, reject or delete them. Approved content becomes searchable by the agents.
+
+To request feedback, open the **Agent Feedback** page and drag & drop screenshots or PDFs. Every PDF page is converted to an image and analysed just like screenshots using OpenAI Vision. The text you enter along with the detected text from your files is combined with relevant knowledge base chunks and sent to OpenAI. A short report is shown for every agent together with an executive summary.
+
+Example files are available in the `examples/` folder for testing.
+
