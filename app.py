@@ -1318,16 +1318,6 @@ def apply_style():
             .stProgress>div>div>div {
                 background-color: #0E79B2;
             }
-            /* Compact the Competitor column in tabular feeds */
-            [data-testid="stDataFrame"] [col-id="Competitor"] {
-                max-width: 7.5rem !important;
-                min-width: 7.5rem !important;
-                width: 7.5rem !important;
-            }
-            [data-testid="stDataFrame"] [col-id="Competitor"] .st-ag-grid__cell-value {
-                white-space: normal !important;
-                overflow-wrap: anywhere;
-            }
             @media (prefers-color-scheme: dark) {
                 html, body, [class*="css"] { color: #000 !important; }
                 .stButton>button { color: #fff !important; }
