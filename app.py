@@ -20,7 +20,7 @@ from fpdf import FPDF
 import tempfile
 import zipfile
 import uuid
-from utils import NewsFeedSummary, concat_series, summarize_news_feed
+from utils import concat_series
 
 # Set your OpenAI API key via environment variable
 # Use an environment variable if available but also allow entering the API key
@@ -49,12 +49,6 @@ if not openai.api_key:
 MODEL = "gpt-4o-mini"
 # Approximate model cost per 1K tokens in USD used for cost estimates
 TOKEN_COST_PER_1K = 0.01
-
-NEWS_FEED_LOOKBACK_DAYS = 30
-NEWS_FEED_DATE_COLUMN = "published_at"
-NEWS_FEED_OPPORTUNITY_COLUMN = "is_strong_opportunity"
-NEWS_FEED_COMPETITOR_COLUMN = "mentions_competitor"
-NEWS_FEED_STATE_KEYS = ("news_feed_df", "news_feed_data", "news_feed")
 
 # Retry configuration for API calls
 MAX_RETRIES = 3
@@ -860,63 +854,6 @@ def compute_kpis(
     return nps_pivot, cat_pivot, sentiment, nps_score
 
 
-def display_real_time_news_feed() -> None:
-    """Render the real-time news feed metrics using a 30-day lookback window."""
-
-    news_data = None
-    for key in NEWS_FEED_STATE_KEYS:
-        if key in st.session_state:
-            news_data = st.session_state[key]
-            break
-
-    if news_data is None:
-        return
-
-    if hasattr(news_data, "empty") and getattr(news_data, "empty"):
-        return
-
-    if hasattr(news_data, "__len__") and not getattr(news_data, "empty", False):
-        try:
-            if len(news_data) == 0:  # type: ignore[arg-type]
-                return
-        except TypeError:
-            pass
-
-    try:
-        summary: NewsFeedSummary = summarize_news_feed(
-            news_data,
-            lookback_days=NEWS_FEED_LOOKBACK_DAYS,
-            date_column=NEWS_FEED_DATE_COLUMN,
-            opportunity_column=NEWS_FEED_OPPORTUNITY_COLUMN,
-            competitor_column=NEWS_FEED_COMPETITOR_COLUMN,
-        )
-    except TypeError:
-        st.warning(
-            "News feed data must be a DataFrame or an iterable of mapping objects."
-        )
-        return
-
-    st.caption("LIVE INTELLIGENCE")
-    st.markdown("### Real-time News Feed")
-    st.write(
-        "Fresh stories stream in as they break, gently ranked by relevancy so you "
-        "can stay calmly ahead of the curve."
-    )
-    col1, col2, col3 = st.columns(3)
-    col1.metric(
-        f"Articles scanned in the last {summary.lookback_days} days",
-        summary.articles_scanned,
-    )
-    col2.metric(
-        f"New strong opportunities in the last {summary.lookback_days} days",
-        summary.strong_opportunities,
-    )
-    col3.metric(
-        f"Competitor mentions in the last {summary.lookback_days} days",
-        summary.competitor_mentions,
-    )
-
-
 def display_summary(df: pd.DataFrame, nps_col: str | None):
     """Show high-level KPIs and charts."""
     st.subheader("🚀 High-Level KPIs")
@@ -1434,8 +1371,6 @@ else:
         unsafe_allow_html=True,
     )
 st.title("NPS Survey Analyzer")
-
-display_real_time_news_feed()
 
 st.sidebar.header("1. Upload Survey Data")
 st.sidebar.markdown("🔗 [Troubleshooting guide](README.md#troubleshooting)")
